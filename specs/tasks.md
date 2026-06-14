@@ -5,7 +5,7 @@ Master task tracker for building the VC-500W label tool. Design rationale lives 
 
 **Status legend:** ☐ todo · ◐ in progress · ✅ done · ⏸ blocked/waiting
 
-Last updated: 2026-06-14
+Last updated: 2026-06-14 (Phase 1 complete)
 
 ---
 
@@ -21,15 +21,15 @@ Last updated: 2026-06-14
 | 0.6 | Write design spec | ✅ | `specs/design.md` |
 | 0.7 | Commit design phase | ✅ | commit `cb6580b` (not pushed yet) |
 
-## Phase 1 — Scaffold
+## Phase 1 — Scaffold ✅
 
 | # | Task | Status | Notes |
 |---|------|:--:|------|
-| 1.1 | `uv` project: `pyproject.toml`, deps (pillow, qrcode, rich, rich-argparse) | ☐ | |
-| 1.2 | `src/labler/__init__.py` with `__version__` | ☐ | single source of truth |
-| 1.3 | Console entry point `labler = labler.cli:main` | ☐ | |
-| 1.4 | `errors.py` — typed exceptions (ConnectionBusy, PrinterError, MediaError) | ☐ | |
-| 1.5 | `config.py` — host default, media table (25/50 mm), settings load/save | ☐ | |
+| 1.1 | `uv` project: `pyproject.toml`, deps (pillow, qrcode, rich, rich-argparse) | ✅ | `uv sync` ok; web/dev extras |
+| 1.2 | `src/labler/__init__.py` with `__version__` | ✅ | `0.1.0` |
+| 1.3 | Console entry point `labler = labler.cli:main` | ✅ | `labler --version/--help/status` run |
+| 1.4 | `errors.py` — typed exceptions (ConnectionBusy, PrinterError, MediaError) | ✅ | |
+| 1.5 | `config.py` — host default, media table (25/50 mm), settings load/save | ✅ | 25→312px, 50→624px verified |
 | 1.6 | Push scaffold + design to `origin` | ☐ | |
 
 ## Phase 2 — Core library
