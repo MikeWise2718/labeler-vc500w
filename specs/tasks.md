@@ -36,30 +36,31 @@ Last updated: 2026-06-14 (Phase 1 complete)
 
 | # | Task | Status | Notes |
 |---|------|:--:|------|
-| 2.1 | `status.py` — parse status.xml into `Status` dataclass (+ `.ready`) | ☐ | |
-| 2.2 | `protocol.py` — TCP transport, full print sequence, clean socket close | ☐ | port the verified sequence |
-| 2.3 | Handle single-connection gotcha → `ConnectionBusy` with helpful hint | ☐ | see CLAUDE.md gotcha |
-| 2.4 | `render.py` — image → JPEG @ tape width (rotate/crop/fit, flatten alpha) | ☐ | |
-| 2.5 | `render.py` — text rendering | ☐ | font choice = open question |
-| 2.6 | `render.py` — QR rendering | ☐ | |
+| 2.1 | `status.py` — parse status.xml into `Status` dataclass (+ `.ready`) | ✅ | live-tested; `ready` accepts SUCCESS stage |
+| 2.2 | `protocol.py` — TCP transport, full print sequence, clean socket close | ◐ | **BUG**: poll loop releases lock too early → printer wedges in PRINTING with no tape used. Fix poll before next print. |
+| 2.3 | Handle single-connection gotcha → `ConnectionBusy` with helpful hint | ✅ | timeout → ConnectionBusy w/ hint |
+| 2.4 | `render.py` — image → JPEG @ tape width (rotate/crop/fit, flatten alpha) | ✅ | width 312/624 verified |
+| 2.5 | `render.py` — text rendering | ✅ | system-font fallback chain (no bundle) |
+| 2.6 | `render.py` — QR rendering | ✅ | square, fit to width |
 
 ## Phase 3 — CLI
 
 | # | Task | Status | Notes |
 |---|------|:--:|------|
-| 3.1 | `labler status` | ☐ | |
-| 3.2 | `labler print-image FILE` (+ `-mw -m -ct -r -cr`) | ☐ | |
-| 3.3 | `labler print-text "..."` | ☐ | |
-| 3.4 | `labler print-qr "..."` | ☐ | |
-| 3.5 | `--dry-run` / `--output` (render only, no print) | ☐ | reuses render pipeline |
+| 3.1 | `labler status` | ✅ | live, rich table |
+| 3.2 | `labler print-image FILE` (+ `-mw -m -ct -r -cr`) | ◐ | wired; blocked by 2.2 poll bug |
+| 3.3 | `labler print-text "..."` | ◐ | wired; blocked by 2.2 poll bug |
+| 3.4 | `labler print-qr "..."` | ◐ | wired; print attempt wedged printer (2.2 bug) |
+| 3.5 | `--dry-run` / `--output` (render only, no print) | ✅ | works; flags accepted pre/post command |
 
 ## Phase 4 — Verify & test
 
 | # | Task | Status | Notes |
 |---|------|:--:|------|
-| 4.1 | `tests/` for render (sizes, rotate, crop, fit) | ☐ | |
-| 4.2 | `tests/` for protocol/status with a fake socket | ☐ | |
+| 4.1 | `tests/` for render (sizes, rotate, crop, fit) | ✅ | 9 tests |
+| 4.2 | `tests/` for protocol/status with a fake socket | ✅ | 11 tests; 20 total pass |
 | 4.3 | Reprint color grid on **fresh CZ-1004** to confirm color | ⏸ | waiting on new media |
+| 4.4 | **Power-cycle printer to clear wedged job** (see 2.2) | ⏸ | needs physical access |
 
 ## Phase 5 — Flask web app
 

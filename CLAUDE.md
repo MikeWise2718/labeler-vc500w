@@ -58,6 +58,14 @@ protocol breakdown and citations.
   red→magenta. NOT a protocol/mode/JPEG issue: geometry, resolution, edges, ~312px usable width all
   printed correctly. **Fix = fresh CZ-1004 roll** (ZINK shelf life ~1-2 yr). Confirm by reprinting the
   color grid on new media before chasing any software color correction.
+- **GOTCHA — never release the lock until the job truly finishes.** If you send `<lock op=cancel>`
+  while the print is still committing (e.g. a poll loop that exits early on an empty/partial status
+  reply and releases too soon), the printer **wedges in `print_state=BUSY / stage=PRINTING` with no
+  tape consumed** (`remain` unchanged), and then **refuses new locks** with `<code>2</code> Printer
+  busy`. Only a **power-cycle** clears it. Seen 2026-06-14 with the first `print-qr`. The poll loop
+  MUST: (a) ignore empty/None replies and keep polling, (b) wait until it has seen BUSY return to a
+  ready/SUCCESS state, and only THEN release. The earlier manual color-grid print worked precisely
+  because it polled to completion before releasing.
 - **GOTCHA — single connection slot:** the VC-500W accepts only **one TCP connection on :9100 at a
   time**. Brother's setup/desktop app holds it; while held, our connects **time out even though ICMP
   ping succeeds** (looks like a dead/sleeping printer but isn't). Symptom seen 2026-06-14: setup
