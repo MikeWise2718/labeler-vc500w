@@ -32,15 +32,52 @@ protocol breakdown and citations.
 - Pokemon naming theme for any host references.
 
 ## Network notes
-- Printer lives on the `192.168.25.0/24` LAN (Fritzbox 7590 "Dungeon Door" is DHCP). **TODO:** pin
-  down its IP/hostname (likely `VC-500W####.local` via mDNS) and record it here once confirmed.
+- Printer lives on the `192.168.25.0/24` LAN (Fritzbox 7590 "Dungeon Door" is DHCP).
+- **Confirmed unit** (scanned 2026-06-14, joined via WPS):
+  - IP: `192.168.25.219` (DHCP — consider a static lease/reservation on the Fritzbox so it doesn't move)
+  - mDNS / hostname: `VC-500W5087.local` (`VC-500W5087.fritz.box`); NetBIOS `BRVC-500W-5087`
+  - MAC: `04:fe:a1:53:bf:2b`
+  - Open ports: 80 (web UI, lighttpd — http://192.168.25.219/), 443, 631 (CUPS/IPP), **9100 (raw control — what our tool targets)**
+  - Web UI title confirms model: "Brother VC-500W Printer"
+- **Protocol verified (read path)** 2026-06-14: sent `<read><path>/status.xml</path></read>` raw to :9100,
+  got the expected two-part XML reply (`code 0` envelope + status body). Reverse-engineered protocol matches
+  our firmware. Reply fields: `print_state=IDLE`, `print_job_stage=READY FOR PRINT`, `print_job_error=NONE`,
+  `remain=54.87`, `cassette_type=1`, `power.online=1`, `power.capacity=100`.
+- **Loaded media** (2026-06-14): **CZ-1004 — 25 mm (1") continuous ZINK tape**. Maps to `cassette_type=1`
+  in the status reply (one confirmed point in the cassette-type lookup). At 313 DPI (~12.48 px/mm), 25 mm
+  ≈ **312 px** across the tape (minus small unprintable edge margins — confirm exact usable width on first print).
+  Length axis is continuous (you choose it; ~17" max single pass).
+- **First successful direct print** 2026-06-14: full sequence worked — `lock` (got job_token) →
+  `<print>` XML (`mode=vivid`, `lpi=317`, `cutmode=full`, `datasize`) → raw JPEG bytes → poll
+  `status.xml` (`PROCESSING → PREPARING PRINT → PREHEAT → PRINTING`) → `lock cancel`. Read AND
+  write paths verified against our firmware. Test image: `tools/colortest.jpg` (312×720 color grid).
+- **Color quality on first print = AGED MEDIA, not a bug.** The CZ-1004 roll was bought ~April 2021,
+  used very little, printed 2026 (~5 yr old). Result: **yellow very pale, red→magenta, magenta faded**
+  (cyan/black/green OK). This is the textbook old-ZINK fingerprint — ZINK dye is embedded in the paper
+  (no cartridges), the **yellow layer degrades first** with age/heat/light, and weak yellow collapses
+  red→magenta. NOT a protocol/mode/JPEG issue: geometry, resolution, edges, ~312px usable width all
+  printed correctly. **Fix = fresh CZ-1004 roll** (ZINK shelf life ~1-2 yr). Confirm by reprinting the
+  color grid on new media before chasing any software color correction.
+- **GOTCHA — single connection slot:** the VC-500W accepts only **one TCP connection on :9100 at a
+  time**. Brother's setup/desktop app holds it; while held, our connects **time out even though ICMP
+  ping succeeds** (looks like a dead/sleeping printer but isn't). Symptom seen 2026-06-14: setup
+  program running → all TCP ports timed out, ping OK → killing the app + LED settling to solid blue
+  freed the slot → print went through. **The CLI tool must close its socket cleanly after every op**,
+  and "can't connect to :9100" should hint "is another app/the Brother software connected?"
 - **Security:** the device runs outdated embedded Linux/CUPS and has zero transport encryption.
   Keep it on the trusted LAN only — never port-forward 9100 or expose it to the internet.
 
-## Licensing caution
-Both upstream reference projects are **AGPLv3** (strong copyleft). If we fork either, the
-derivative is bound by AGPLv3. Decide the license deliberately before publishing a repo —
-flag this to the user.
+## License — DECIDED: MIT (build from scratch, do NOT fork)
+**Decision (2026-06-14):** fresh implementation, **MIT licensed**. We do NOT fork
+`sgrimee/labelprinter-vc500w` or the m7i.org module — we've already independently reproduced and
+verified the full protocol against our firmware (status read + print write), so there's nothing left
+to fork. The upstream projects are **AGPLv3**; forking would bind us (and especially the planned
+Flask web app — AGPL is viral over the network) to AGPLv3. Building from scratch keeps us free to use
+MIT.
+- **Discipline:** write ALL code original. Do not copy code/snippets from the AGPL projects. Wire
+  protocol *formats* (XML message shapes, byte framing) are factual and fine to reimplement; their
+  source code is not.
+- Add a top-level `LICENSE` (MIT) when code lands.
 
 ## Git
 - Parent `D:\hw` is already a git repo (`origin` set, branch `main`).

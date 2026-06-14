@@ -11,6 +11,9 @@ dist/
 .env
 *.local
 
+# Generated test artifacts
+tools/colortest.jpg
+
 # OS
 .DS_Store
 Thumbs.db

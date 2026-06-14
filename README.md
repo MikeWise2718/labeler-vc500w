@@ -125,7 +125,9 @@ See `CLAUDE.md` for working conventions and `specs/` for any design docs once we
 
 ## License
 
-**AGPLv3** (see `LICENSE`). Chosen to match the upstream reference projects
-([sgrimee/labelprinter-vc500w](https://github.com/sgrimee/labelprinter-vc500w) and the
-[m7i.org labelprinter](https://m7i.org/projects/labelprinter-linux-python-for-vc-500w/)), both of
-which are AGPLv3 — a fork of either inherits this license.
+**MIT** (see `LICENSE`). This is a **from-scratch** implementation — we do *not* fork the upstream
+AGPLv3 projects ([sgrimee/labelprinter-vc500w](https://github.com/sgrimee/labelprinter-vc500w),
+[m7i.org labelprinter](https://m7i.org/projects/labelprinter-linux-python-for-vc-500w/)). We learned
+the wire protocol from their write-ups and verified it independently against our own printer; no code
+is copied from them, so their AGPLv3 does not apply. MIT keeps the project (and anything built on top
+of it, including the planned Flask web UI) free of copyleft obligations.
