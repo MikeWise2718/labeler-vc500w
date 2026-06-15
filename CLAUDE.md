@@ -72,6 +72,16 @@ protocol breakdown and citations.
   program running → all TCP ports timed out, ping OK → killing the app + LED settling to solid blue
   freed the slot → print went through. **The CLI tool must close its socket cleanly after every op**,
   and "can't connect to :9100" should hint "is another app/the Brother software connected?"
+- **Front-panel LEDs — quick decoder** (full chart + sources: `docs/led-indications.md`; vendor
+  PDFs in `docs/vendor/`). The swipe-to-cut LED row is the fastest way to read print state:
+  **center LED then both end LEDs alternating (~0.5s each) = printing in progress**;
+  **blinking left→right = label done, swipe to cut**; **ALL LEDs blinking simultaneously = paper
+  jam/error**; middle LED blinking = processing/firmware. Wi-Fi LED **solid blue = healthy
+  (Infrastructure mode)**. Cassette LED **solid white = locked & ready**. GOTCHA seen 2026-06-15:
+  a **wedged** printer shows the "printing in progress" panel pattern AND `status.xml`
+  `State=BUSY/Stage=PRINTING` while `remain` and stage are **frozen** (no tape feeding) — looks
+  like printing, isn't. A real print advances stage / drops `remain`; frozen = wedge →
+  power-cycle. (center-then-outer pattern is Brother-FAQ-sourced, not yet confirmed on our firmware.)
 - **Security:** the device runs outdated embedded Linux/CUPS and has zero transport encryption.
   Keep it on the trusted LAN only — never port-forward 9100 or expose it to the internet.
 
