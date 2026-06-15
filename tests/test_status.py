@@ -67,3 +67,26 @@ def test_missing_fields_are_none():
     assert s.print_state is None
     assert s.remain is None
     assert s.ready is False
+
+
+def test_parse_picks_last_status_block_from_pipelined_reply():
+    # The printer pipelines replies: one socket read may glue a leftover ack and
+    # several status bodies together (NUL-separated). parse() must return the LAST
+    # block with a real print_state -- the freshest -- not the first stale one.
+    text = (
+        "<status><code>0</code><comment>print data received</comment></status>\x00"
+        "<status><print_state>BUSY</print_state><print_job_stage>PROCESSING</print_job_stage>"
+        "<print_job_error>NONE</print_job_error></status>\x00"
+        "<status><print_state>IDLE</print_state><print_job_stage>SUCCESS</print_job_stage>"
+        "<print_job_error>NONE</print_job_error></status>"
+    )
+    s = Status.parse(text)
+    assert s.print_state == "IDLE"
+    assert s.print_job_stage == "SUCCESS"
+
+
+def test_parse_ack_only_reply_has_no_state():
+    # A bare ack (no print_state anywhere) parses to state=None -- callers treat
+    # this as "keep polling", not as job-done.
+    s = Status.parse("<status><code>0</code><comment>print data received</comment></status>")
+    assert s.print_state is None

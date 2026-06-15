@@ -87,7 +87,10 @@ def _cmd_status(args) -> int:
     table.add_row("State", str(st.print_state))
     table.add_row("Stage", str(st.print_job_stage))
     table.add_row("Error", str(st.print_job_error))
-    table.add_row("Tape remaining", str(st.remain))
+    if st.remain is not None:
+        table.add_row("Tape remaining", f'{st.remain:g}" ({st.remain * 2.54:.0f} cm)')
+    else:
+        table.add_row("Tape remaining", "?")
     table.add_row("Cassette type", str(st.cassette_type))
     table.add_row("Online", str(st.online))
     table.add_row("Power capacity", f"{st.capacity}%" if st.capacity is not None else "?")

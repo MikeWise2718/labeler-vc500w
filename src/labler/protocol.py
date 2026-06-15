@@ -1,22 +1,30 @@
 """TCP :9100 transport for the VC-500W.
 
-Verified sequence (2026-06-14, see specs/design.md):
-  1. lock      -> reply carries <job_token>
-  2. print XML -> then the raw JPEG bytes (datasize declares the count)
-  3. poll status.xml (with job_token) until IDLE & READY
-  4. lock cancel (release)
+Lockless print sequence (see docs/print-sequence-finding.md):
+  1. connect, send <print> XML, then the raw JPEG bytes (datasize declares the count)
+  2. CLOSE the socket -- this is what triggers the printer's cut/eject cycle. The
+     VC-500W has no explicit eject/cut command; the cut fires on connection close.
+  3. RECONNECT and poll status.xml until the job finishes (idle / SUCCESS / error)
+
+We deliberately do NOT use the <lock>/<job_token> mechanism. It exists to reserve
+the printer for multi-page batch jobs against concurrent clients -- but the VC-500W
+already allows only ONE :9100 connection at a time, so for a single-label tool the
+lock is redundant and, worse, an unreleased lock (on any error) wedges the printer in
+BUSY/PRINTING until a power-cycle. Three reverse-engineering sources independently
+call the lock "error-prone / usually unnecessary." See docs/print-sequence-finding.md.
 
 Each XML message is sent as raw UTF-8 with no length prefix; the JPEG bytes follow
-the <print> message directly. Only ONE connection to :9100 is possible at a time, so
-we open, run the whole job, and close cleanly.
+the <print> message directly.
 """
 
 from __future__ import annotations
 
-import re
+import os
 import socket
 import time
 from typing import Callable
+
+_DEBUG = bool(os.environ.get("LABLER_DEBUG"))
 
 from .config import PORT
 from .errors import ConnectionBusy, PrinterError
@@ -69,9 +77,8 @@ def _send(sock: socket.socket, payload: bytes | str) -> None:
     sock.sendall(payload if isinstance(payload, bytes) else payload.encode("utf-8"))
 
 
-def _status_query(job_token: str | None = None) -> str:
-    token = f"<job_token>{job_token}</job_token>\n" if job_token else ""
-    return f"{_XML_HEAD}<read>\n<path>/status.xml</path>\n{token}</read>\n"
+def _status_query() -> str:
+    return f"{_XML_HEAD}<read>\n<path>/status.xml</path>\n</read>\n"
 
 
 def get_status(host: str, *, timeout: float = 8.0) -> Status:
@@ -94,7 +101,19 @@ def print_jpeg(
     timeout: float = 8.0,
     job_timeout_s: float = 60.0,
 ) -> Status:
-    """Print a JPEG and wait for the job to complete.
+    """Print a JPEG and wait for the job to complete (lockless).
+
+    Sequence (verified on our firmware 2026-06-15, see docs/print-sequence-finding.md):
+      connect -> <print> XML -> JPEG bytes -> HOLD the connection open and poll
+      status on the SAME socket until imaging completes -> THEN close. Closing is
+      what triggers the cut, but it MUST happen only after the job finishes.
+
+    The job must NOT be ended early. Closing the socket (or releasing a lock)
+    before imaging completes aborts the job: the printer ejects a blank leader,
+    reports EJECT JAM, and can wedge in BUSY/PRINTING. So we hold the connection
+    through PROCESSING -> PREPARING PRINT -> PREHEAT -> PRINTING -> EJECTING ->
+    SUCCESS, ignoring the brief empty status reply right after the JPEG, and only
+    close in the finally once we've seen the job finish (or genuinely error/time out).
 
     Returns the final Status. Raises PrinterError on a reported print error.
     """
@@ -110,47 +129,63 @@ def print_jpeg(
         if on_progress:
             on_progress(stage)
 
+    progress("sending")
     sock = _connect(host, timeout)
     try:
-        # 1. lock -> job_token
-        progress("locking")
-        _send(sock, f"{_XML_HEAD}<lock>\n<op>set</op>\n<page_count>-1</page_count>\n"
-                    f"<job_timeout>99</job_timeout>\n</lock>\n")
-        reply = _recv(sock)
-        m = re.search(r"<job_token>(.*?)</job_token>", reply)
-        if not m:
-            raise PrinterError(f"printer did not return a job_token; reply was:\n{reply}")
-        token = m.group(1)
-
-        # 2. print XML + JPEG bytes
-        progress("sending")
+        # 1. print XML (no lock, no job_token) + raw JPEG bytes.
         print_xml = (
             f"{_XML_HEAD}<print>\n<mode>{mode}</mode>\n<speed>{speed}</speed>\n"
             f"<lpi>{lpi}</lpi>\n<width>0</width>\n<height>0</height>\n"
             f"<dataformat>jpeg</dataformat>\n<autofit>1</autofit>\n"
-            f"<datasize>{datasize}</datasize>\n<cutmode>{cut}</cutmode>\n"
-            f"<job_token>{token}</job_token>\n</print>\n"
+            f"<datasize>{datasize}</datasize>\n<cutmode>{cut}</cutmode>\n</print>\n"
         )
         _send(sock, print_xml)
         ready = _recv(sock, settle=0.6)
+        if _DEBUG:
+            print(f"[print-ack] {ready!r}", flush=True)
         if "ready to receive" not in ready.lower():
             # Not fatal on all firmwares, but surface it for diagnosis.
             progress("printer not explicitly ready, sending anyway")
         _send(sock, jpeg)
 
-        # 3. poll until IDLE & READY (or error)
-        # Give the printer a beat to start the job before polling, so we observe the
-        # BUSY/PRINTING stages rather than catching a stale pre-job IDLE.
-        time.sleep(1.5)
+        # 2. HOLD this connection and poll until the job truly finishes. Give the
+        #    printer a clear beat to consume the JPEG and start the job before we
+        #    query -- polling too eagerly on this single-slot firmware races the
+        #    job start and can abort it. Never end early.
+        progress("printing")
+        time.sleep(2.5)
         deadline = time.time() + job_timeout_s
         final = Status()
         last_stage = None
         saw_busy = False
         while time.time() < deadline:
-            _send(sock, _status_query(token))
-            st = Status.parse(_recv(sock, settle=0.5))
+            # The held socket may be reset by the printer as imaging begins, and
+            # the printer briefly refuses new connections mid-commit. Either way we
+            # reconnect and keep polling -- a dropped/refused connection is NEVER
+            # treated as job end.
+            if sock is None:
+                try:
+                    sock = _connect(host, timeout)
+                except ConnectionBusy:
+                    time.sleep(1.0)
+                    continue
+            try:
+                _send(sock, _status_query())
+                raw = _recv(sock, settle=0.5)
+                if _DEBUG:
+                    print(f"[poll] {raw!r}", flush=True)
+                st = Status.parse(raw)
+            except OSError:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+                sock = None
+                time.sleep(1.0)
+                continue
+
             if st.print_state is None and st.print_job_stage is None:
-                # empty/partial reply — keep polling, don't treat as terminal
+                # empty/partial reply -- keep polling, don't treat as terminal
                 time.sleep(1.0)
                 continue
             final = st
@@ -159,18 +194,28 @@ def print_jpeg(
                 last_stage = final.print_job_stage
             if final.print_job_error and final.print_job_error != "NONE":
                 raise PrinterError(f"print error: {final.print_job_error}")
-            if final.print_state == "BUSY":
+            # "The job has started" = state left IDLE, or the stage is an active
+            # (non-idle) one. Active stages seen: PROCESSING, PREPARING PRINT,
+            # PREHEAT, PRINTING, EJECTING. Idle stages: READY*, SUCCESS, IDLE.
+            stage_now = final.print_job_stage or ""
+            active_stage = bool(stage_now) and not any(
+                k in stage_now for k in Status._IDLE_STAGES
+            )
+            if final.print_state in ("BUSY", "ERROR") or active_stage:
                 saw_busy = True
-            # Done when: the job ran and came back idle, OR a terminal SUCCESS stage.
-            stage = final.print_job_stage or ""
-            if "SUCCESS" in stage or (saw_busy and final.ready):
+            # Completion requires that THIS job actually started first (saw_busy).
+            # Without that guard, the leftover SUCCESS/READY stage from the PREVIOUS
+            # print satisfies the check on the very first poll -- so we'd close mid
+            # PROCESSING and silently abort the new job (no tape, no error). Only
+            # treat SUCCESS/idle as done once we've observed the job leave idle.
+            if saw_busy and ("SUCCESS" in stage_now or final.ready):
                 break
             time.sleep(2.0)
 
-        # 4. release the lock
-        progress("releasing")
-        _send(sock, f"{_XML_HEAD}<lock>\n<op>cancel</op>\n<job_token>{token}</job_token>\n</lock>\n")
-        _recv(sock)
         return final
     finally:
-        sock.close()
+        # Close only here -- after the job has finished polling. The close
+        # triggers the cut; doing it earlier aborts the print. (sock may be None
+        # if the last reconnect attempt was still pending.)
+        if sock is not None:
+            sock.close()

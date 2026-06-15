@@ -40,7 +40,7 @@ class Status:
     print_state: str | None = None        # IDLE | BUSY | ...
     print_job_stage: str | None = None     # READY FOR PRINT | PRINTING | PREHEAT | ...
     print_job_error: str | None = None     # NONE | ...
-    remain: float | None = None            # tape remaining (units per firmware)
+    remain: float | None = None            # tape remaining, in INCHES (confirmed 2026-06-15)
     cassette_type: int | None = None       # 1 = 25 mm (CZ-1004), others TBD
     online: bool | None = None
     capacity: int | None = None            # power/battery %
@@ -62,6 +62,17 @@ class Status:
 
     @classmethod
     def parse(cls, text: str) -> "Status":
+        # The printer pipelines replies: a single socket read can return several
+        # concatenated <status>...</status> blocks (e.g. a leftover "print data
+        # received" ack glued to the real status body, NUL-separated). Parse the
+        # LAST block that actually carries a <print_state> -- that's the freshest
+        # real status. Falling back to the whole text keeps acks/empty parses working.
+        blocks = re.findall(r"<status>.*?</status>", text, re.DOTALL)
+        for block in reversed(blocks):
+            if "<print_state>" in block:
+                text = block
+                break
+
         online = _find_int(text, "online")
         return cls(
             print_state=_find(text, "print_state"),
