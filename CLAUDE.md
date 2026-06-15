@@ -58,6 +58,11 @@ protocol breakdown and citations.
   red→magenta. NOT a protocol/mode/JPEG issue: geometry, resolution, edges, ~312px usable width all
   printed correctly. **Fix = fresh CZ-1004 roll** (ZINK shelf life ~1-2 yr). Confirm by reprinting the
   color grid on new media before chasing any software color correction.
+  - **Further confirmed 2026-06-15:** printed 5 colortest labels spanning ~35 cm of tape — color is
+    **uniform along the entire length, no improvement further in.** Consistent with ZINK dye being
+    embedded uniformly in the paper (whole roll ages evenly), not an exposed-end/print-path effect.
+    Locks in the aged-media diagnosis. New CZ-1004 roll ordered; reprint the grid on it to confirm
+    the stack was always correct (expect yellow vivid again, red→true-red).
 - **GOTCHA — never release the lock until the job truly finishes.** If you send `<lock op=cancel>`
   while the print is still committing (e.g. a poll loop that exits early on an empty/partial status
   reply and releases too soon), the printer **wedges in `print_state=BUSY / stage=PRINTING` with no
