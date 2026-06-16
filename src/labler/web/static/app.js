@@ -180,26 +180,27 @@ async function renderCanvas() {
 // is 312px wide (across 25mm) x N px long; we rotate it 90deg so across-tape becomes
 // the strip height, and draw a cm ruler + "Tape used" readout from the response dims.
 async function renderTapeView(imgSel, rulerSel, usedSel, dl) {
-  const resp = await fetch("/api/render", {
+  // ?view=tape: the server returns the label already rotated to landscape (length
+  // runs left→right), so the <img> displays natively — no CSS rotation/distortion.
+  const resp = await fetch("/api/render?view=tape", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dl),
   });
   if (!resp.ok) return;
-  const wpx = +resp.headers.get("X-Label-Width-Px");
-  const lpx = +resp.headers.get("X-Label-Length-Px");
+  const wpx = +resp.headers.get("X-Label-Width-Px");   // across-tape (now image HEIGHT)
+  const lpx = +resp.headers.get("X-Label-Length-Px");  // tape length (now image WIDTH)
   const cm = +resp.headers.get("X-Label-Length-Cm");
   const inch = +resp.headers.get("X-Label-Length-In");
   const blob = await resp.blob();
   const img = $(imgSel);
-  if (img) {
-    const strip = img.parentElement;
-    const TAPE_H = parseInt(getComputedStyle(strip).getPropertyValue("--tape-h")) || 64;
-    const scale = TAPE_H / wpx;            // map across-tape px -> on-screen strip height
-    img.style.width = TAPE_H + "px";       // post-rotation, image WIDTH (=wpx) becomes height
-    img.style.height = (lpx * scale) + "px";
-    strip.style.width = (lpx * scale) + "px";
-    img.src = URL.createObjectURL(blob);
-  }
-  drawRuler(rulerSel, cm, lpx * (parseInt(getComputedStyle($(imgSel).parentElement).getPropertyValue("--tape-h")) / wpx || 1));
+  if (!img) return;
+  const strip = img.parentElement;
+  const TAPE_H = parseInt(getComputedStyle(strip).getPropertyValue("--tape-h")) || 64;
+  const onscreenLen = lpx * (TAPE_H / wpx);   // scale length to the strip height
+  img.style.height = TAPE_H + "px";
+  img.style.width = onscreenLen + "px";
+  strip.style.width = onscreenLen + "px";
+  img.src = URL.createObjectURL(blob);
+  drawRuler(rulerSel, cm, onscreenLen);
   const u = $(usedSel);
   if (u) u.textContent = `Tape used: ${cm} cm (${inch}″)`;
 }
@@ -282,11 +283,26 @@ function syncRotateLabel() { $("#rotate-deg").textContent = (design.rotate || 0)
 
 // ---- design save / load -----------------------------------------------------
 $("#btn-save-design").onclick = async () => {
-  design.name = $("#design-name").value || "design";
+  let name = $("#design-name").value.trim();
+  if (!name) {
+    name = (prompt("Name this design:", design.name || "") || "").trim();
+    if (!name) { flash("#print-status", "save cancelled — a name is required"); return; }
+    $("#design-name").value = name;
+  }
+  design.name = name;
   const r = await api.post("/api/designs", design);
   if (r.ok) { design.id = r.id; flash("#print-status", "saved design: " + r.id); }
 };
-$("#btn-new-design").onclick = () => { design = newDesign(); selected = null; $("#design-name").value = ""; addElement("text"); };
+$("#btn-new-design").onclick = () => {
+  const name = (prompt("Name for the new design:", "") || "").trim();
+  if (!name) return;  // cancelled — keep current design
+  design = newDesign();
+  design.name = name;
+  selected = null;
+  $("#design-name").value = name;
+  syncRotateLabel();
+  addElement("text");
+};
 $("#btn-load-design").onclick = async () => {
   const { designs } = await api.json("/api/designs");
   const ul = $("#design-list"); ul.innerHTML = "";

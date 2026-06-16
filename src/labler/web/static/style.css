@@ -75,12 +75,8 @@ label select, label input { margin-top: 3px; }
   display: inline-block;
 }
 .tape-strip img {
-  transform-origin: top left;
-  /* JS sets width = TAPE_H (becomes strip height after rotate) and height = length.
-     rotate 90deg CW about top-left, then push right by the pre-rotation width so the
-     rotated image lands inside the strip. */
-  transform: rotate(90deg);
-  position: absolute; left: var(--tape-h); top: 0;
+  /* Server returns the tape view already landscape (?view=tape), so we display it
+     natively. JS sets height = strip height and width = scaled tape length. */
   image-rendering: pixelated; background: #fff; display: block;
 }
 .tape-ruler {

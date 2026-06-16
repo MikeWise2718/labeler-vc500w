@@ -61,6 +61,17 @@ def test_render_sets_length_headers(client):
     assert float(r.headers["X-Label-Length-Cm"]) > 0
 
 
+def test_render_view_tape_is_landscape(client):
+    # Portrait normal render (312 wide x long); ?view=tape returns it rotated to
+    # landscape so the tape <img> displays natively. Headers stay in true axes.
+    dl = {"media_mm": 25, "length_px": 600, "elements": [
+        {"type": "text", "x": 0, "y": 0, "w": 312, "h": 100, "text": "X", "font_size": 60}]}
+    normal = Image.open(io.BytesIO(client.post("/api/render", json=dl).data))
+    tape = Image.open(io.BytesIO(client.post("/api/render?view=tape", json=dl).data))
+    assert normal.width == 312 and normal.height == 600       # portrait
+    assert tape.width == 600 and tape.height == 312           # landscape (swapped)
+
+
 def test_measure_endpoint(client):
     dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
     m = client.post("/api/measure", json=dl).get_json()

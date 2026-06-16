@@ -113,10 +113,16 @@ def create_app() -> Flask:
     # ---- render / print --------------------------------------------------------
     @app.post("/api/render")
     def api_render():
-        """Body = display-list JSON -> PNG preview bytes (the WYSIWYG preview)."""
+        """Body = display-list JSON -> PNG preview bytes (the WYSIWYG preview).
+
+        ?view=tape returns the label pre-rotated to landscape (length running left→
+        right) so the tape-view <img> displays natively without CSS transforms.
+        """
         dl = _resolve_assets(request.get_json(force=True))
+        # 90° CW lays the across-tape axis (width) down as image height; length -> width.
+        view_rotate = 90 if request.args.get("view") == "tape" else 0
         try:
-            png = compose.render_display_list(dl, fmt="PNG")
+            png = compose.render_display_list(dl, fmt="PNG", view_rotate=view_rotate)
             dims = compose.measure_display_list(dl)
         except Exception as e:  # malformed display-list -> 400, never a 500
             log_event("render.error", str(e), kind=type(e).__name__)
