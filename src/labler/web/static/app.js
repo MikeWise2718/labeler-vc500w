@@ -1,0 +1,368 @@
+"use strict";
+// Labler VC-500W web UI. Server-renders-with-client-overlay editor: the canvas is
+// the real Pillow PNG from /api/render; element manipulation is an HTML overlay that
+// POSTs the display-list back on every change.
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const api = {
+  async json(url, opts) { const r = await fetch(url, opts); return r.json(); },
+  async post(url, body) {
+    return this.json(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  },
+  async del(url) { return this.json(url, { method: "DELETE" }); },
+};
+
+// ---- editor state -----------------------------------------------------------
+let design = newDesign();
+let selected = null;     // index into design.elements
+let renderTimer = null;
+let settingsCache = {};
+
+function newDesign() {
+  return { name: "", media_mm: 25, length_px: "auto", background: "white", elements: [] };
+}
+
+// ---- tabs -------------------------------------------------------------------
+$$(".tab").forEach(t => t.addEventListener("click", () => {
+  $$(".tab").forEach(x => x.classList.remove("active"));
+  $$(".panel").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  $("#tab-" + t.dataset.tab).classList.add("active");
+  if (t.dataset.tab === "device") loadDevice();
+  if (t.dataset.tab === "about") { loadAbout(); loadHistory(); }
+  if (t.dataset.tab === "print") renderPrintPreview();
+}));
+
+// ---- boot -------------------------------------------------------------------
+(async function boot() {
+  const ping = await api.json("/api/ping");
+  $("#version").textContent = "v" + ping.version;
+  await loadSettings();
+  await loadFonts();
+  pollStatus();
+  setInterval(pollStatus, 15000);
+  addElement("text");           // start with one text element so the canvas isn't empty
+})();
+
+// ---- status pill ------------------------------------------------------------
+async function pollStatus() {
+  const pill = $("#status-pill");
+  try {
+    const s = await api.json("/api/status");
+    if (s.ok) {
+      pill.textContent = s.ready ? "ready" : (s.state || "?");
+      pill.className = "pill " + (s.ready ? "ok" : "bad");
+      pill.title = `state=${s.state} stage=${s.stage} remain=${s.remain_in ?? "?"}"`;
+    } else { pill.textContent = "offline"; pill.className = "pill bad"; pill.title = s.error || ""; }
+  } catch (e) { pill.textContent = "offline"; pill.className = "pill bad"; }
+}
+
+// ============================ EDITOR ========================================
+function addElement(type) {
+  const w = design.media_mm === 50 ? 624 : 312;
+  const z = design.elements.length;
+  let el;
+  if (type === "image") el = { type, x: 0, y: 0, w, h: 200, rotate: 0, z, src_id: null, fit: "contain" };
+  else if (type === "text") el = { type, x: 8, y: 8, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || null, font_size: 56, color: "black", align: "center" };
+  else if (type === "border") el = { type, z: 99, color: "black", thickness: 4 };
+  design.elements.push(el);
+  selected = design.elements.length - 1;
+  if (type === "image") pickImageFor(el);
+  renderEditor();
+}
+
+$$("[data-add]").forEach(b => b.addEventListener("click", () => addElement(b.dataset.add)));
+
+function pickImageFor(el) {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "image/*";
+  inp.onchange = async () => {
+    const fd = new FormData(); fd.append("file", inp.files[0]);
+    const r = await fetch("/api/assets", { method: "POST", body: fd }).then(x => x.json());
+    if (r.ok) {
+      el.src_id = r.id;
+      // fit the imported image to tape width preserving aspect
+      el.h = Math.round(r.h * (el.w / r.w));
+      renderEditor();
+    } else alert("upload failed: " + r.error);
+  };
+  inp.click();
+}
+
+function renderEditor() {
+  renderElementList();
+  renderProps();
+  scheduleRender();
+}
+
+function renderElementList() {
+  const ul = $("#element-list"); ul.innerHTML = "";
+  design.elements.forEach((el, i) => {
+    const li = document.createElement("li");
+    if (i === selected) li.classList.add("sel");
+    const label = el.type === "text" ? `text: ${el.text.slice(0, 12)}` : el.type;
+    li.innerHTML = `<span class="el-type">${label}</span>
+      <button class="el-btn" data-up="${i}">↑</button>
+      <button class="el-btn" data-down="${i}">↓</button>
+      <button class="el-btn" data-del="${i}">✕</button>`;
+    li.querySelector(".el-type").onclick = () => { selected = i; renderEditor(); };
+    ul.appendChild(li);
+  });
+  ul.querySelectorAll("[data-del]").forEach(b => b.onclick = e => { e.stopPropagation(); design.elements.splice(+b.dataset.del, 1); selected = null; renderEditor(); });
+  ul.querySelectorAll("[data-up]").forEach(b => b.onclick = e => { e.stopPropagation(); moveZ(+b.dataset.up, -1); });
+  ul.querySelectorAll("[data-down]").forEach(b => b.onclick = e => { e.stopPropagation(); moveZ(+b.dataset.down, +1); });
+}
+
+function moveZ(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= design.elements.length) return;
+  [design.elements[i], design.elements[j]] = [design.elements[j], design.elements[i]];
+  design.elements.forEach((el, k) => { if (el.type !== "border") el.z = k; });
+  selected = j; renderEditor();
+}
+
+function renderProps() {
+  const p = $("#props");
+  if (selected == null || !design.elements[selected]) { p.innerHTML = `<p class="muted">Select or add an element.</p>`; return; }
+  const el = design.elements[selected];
+  let h = `<h3 style="margin-top:0">${el.type}</h3><div class="form">`;
+  const num = (k, lbl, min = 0) => `<label>${lbl}<input type="number" data-k="${k}" value="${el[k] ?? 0}" min="${min}"></label>`;
+  if (el.type === "text") {
+    h += `<label>Text<input data-k="text" value="${escapeAttr(el.text)}"></label>`;
+    h += `<label>Font<select data-k="font" id="prop-font"></select></label>`;
+    h += num("font_size", "Size", 4);
+    h += `<label>Color<input type="color" data-k="color" value="${toHex(el.color)}"></label>`;
+    h += `<label>Align<select data-k="align"><option ${el.align==="left"?"selected":""}>left</option><option ${el.align==="center"?"selected":""}>center</option><option ${el.align==="right"?"selected":""}>right</option></select></label>`;
+    h += num("x", "X") + num("y", "Y") + num("w", "Width", 1) + num("rotate", "Rotate");
+  } else if (el.type === "image") {
+    h += `<button id="prop-pick">Replace image…</button>`;
+    h += `<label>Fit<select data-k="fit"><option ${el.fit==="contain"?"selected":""}>contain</option><option ${el.fit==="stretch"?"selected":""}>stretch</option></select></label>`;
+    h += num("x", "X") + num("y", "Y") + num("w", "Width", 1) + num("h", "Height", 1) + num("rotate", "Rotate");
+  } else if (el.type === "border") {
+    h += `<label>Color<input type="color" data-k="color" value="${toHex(el.color)}"></label>`;
+    h += num("thickness", "Thickness", 1);
+  }
+  h += `</div>`;
+  p.innerHTML = h;
+  p.querySelectorAll("[data-k]").forEach(inp => inp.oninput = () => {
+    let v = inp.value;
+    if (inp.type === "number") v = +v;
+    el[inp.dataset.k] = v;
+    if (inp.dataset.k === "text") renderElementList();
+    scheduleRender();
+  });
+  if (el.type === "image") $("#prop-pick").onclick = () => pickImageFor(el);
+  if (el.type === "text") fillFontSelect($("#prop-font"), el.font);
+}
+
+function scheduleRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(renderCanvas, 180);
+}
+
+async function renderCanvas() {
+  syncMediaLength();
+  const blob = await fetch("/api/render", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(design),
+  }).then(r => r.ok ? r.blob() : null);
+  const img = $("#edit-preview");
+  if (blob) img.src = URL.createObjectURL(blob);
+  drawOverlay();
+}
+
+function syncMediaLength() {
+  design.media_mm = +$("#edit-media").value;
+  const lv = $("#edit-length").value;
+  design.length_px = lv === "auto" ? "auto" : +lv;
+}
+
+// overlay: a selection box positioned over the preview, mapped from label px -> screen px
+function drawOverlay() {
+  const ov = $("#overlay"); ov.innerHTML = "";
+  const el = (selected != null) ? design.elements[selected] : null;
+  if (!el || el.type === "border") return;
+  const img = $("#edit-preview");
+  if (!img.naturalWidth) return;
+  const scaleX = img.clientWidth / img.naturalWidth;
+  const scaleY = img.clientHeight / img.naturalHeight;
+  const box = document.createElement("div");
+  box.className = "sel-box";
+  box.style.left = (el.x * scaleX) + "px";
+  box.style.top = (el.y * scaleY) + "px";
+  box.style.width = (el.w * scaleX) + "px";
+  box.style.height = ((el.h || 40) * scaleY) + "px";
+  box.innerHTML = `<div class="handle"></div>`;
+  ov.appendChild(box);
+  enableDrag(box, el, scaleX, scaleY);
+}
+
+function enableDrag(box, el, sx, sy) {
+  const onDown = (e, mode) => {
+    e.preventDefault();
+    const start = pointer(e);
+    const ox = el.x, oy = el.y, ow = el.w, oh = el.h || 40;
+    const move = ev => {
+      const p = pointer(ev);
+      const dx = (p.x - start.x) / sx, dy = (p.y - start.y) / sy;
+      if (mode === "move") { el.x = Math.round(ox + dx); el.y = Math.round(oy + dy); }
+      else { el.w = Math.max(8, Math.round(ow + dx)); if ("h" in el) el.h = Math.max(8, Math.round(oh + dy)); }
+      drawOverlay(); renderProps2Sync();
+    };
+    const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); scheduleRender(); };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  };
+  box.addEventListener("pointerdown", e => { if (!e.target.classList.contains("handle")) onDown(e, "move"); });
+  box.querySelector(".handle").addEventListener("pointerdown", e => { e.stopPropagation(); onDown(e, "resize"); });
+}
+const pointer = e => ({ x: e.clientX, y: e.clientY });
+function renderProps2Sync() { // update number inputs live during drag without full rebuild
+  if (selected == null) return; const el = design.elements[selected];
+  ["x", "y", "w", "h"].forEach(k => { const i = $(`[data-k="${k}"]`); if (i && k in el) i.value = el[k]; });
+}
+
+$("#edit-media").addEventListener("change", () => { syncMediaLength(); renderCanvas(); });
+$("#edit-length").addEventListener("change", () => { syncMediaLength(); renderCanvas(); });
+
+// ---- design save / load -----------------------------------------------------
+$("#btn-save-design").onclick = async () => {
+  design.name = $("#design-name").value || "design";
+  const r = await api.post("/api/designs", design);
+  if (r.ok) { design.id = r.id; flash("#print-status", "saved design: " + r.id); }
+};
+$("#btn-new-design").onclick = () => { design = newDesign(); selected = null; $("#design-name").value = ""; addElement("text"); };
+$("#btn-load-design").onclick = async () => {
+  const { designs } = await api.json("/api/designs");
+  const ul = $("#design-list"); ul.innerHTML = "";
+  designs.forEach(d => {
+    const li = document.createElement("li");
+    li.innerHTML = `${d.preview ? `<img src="${d.preview}">` : ""}<span class="d-name">${d.name}</span><button data-del="${d.id}">✕</button>`;
+    li.querySelector(".d-name").onclick = async () => {
+      design = await api.json("/api/designs/" + d.id);
+      if (!design.elements) design = newDesign();
+      $("#design-name").value = design.name || "";
+      $("#edit-media").value = design.media_mm; $("#edit-length").value = design.length_px;
+      selected = design.elements.length ? 0 : null;
+      $("#modal").classList.add("hidden"); renderEditor();
+    };
+    li.querySelector("[data-del]").onclick = async () => { await api.del("/api/designs/" + d.id); li.remove(); };
+    ul.appendChild(li);
+  });
+  $("#modal").classList.remove("hidden");
+};
+$("#modal-close").onclick = () => $("#modal").classList.add("hidden");
+
+// ============================ PRINT ========================================
+async function renderPrintPreview() {
+  const blob = await fetch("/api/render", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(design),
+  }).then(r => r.ok ? r.blob() : null);
+  if (blob) $("#print-preview").src = URL.createObjectURL(blob);
+  $("#print-media").value = design.media_mm;
+}
+
+$("#btn-print").onclick = async () => {
+  if (!confirm("Print this label to the VC-500W?")) return;
+  design.media_mm = +$("#print-media").value;
+  const body = { ...design, mode: $("#print-mode").value, cut: $("#print-cut").value };
+  flash("#print-status", "printing… (hold tight, ~10–20 s)");
+  const r = await api.post("/api/print", body);
+  if (r.ok) flash("#print-status", `✓ printed — tape remaining ${r.remain_in ?? "?"}"`);
+  else flash("#print-status", "✗ " + (r.error || ("state " + r.state)));
+  pollStatus();
+};
+$("#btn-reset").onclick = async () => {
+  flash("#print-status", "resetting…");
+  const r = await api.post("/api/reset", {});
+  flash("#print-status", r.ok ? (r.wedged ? "⚠ " + r.hint : "device ready") : "✗ " + r.error);
+  pollStatus();
+};
+
+// ============================ DEVICE =======================================
+$("#btn-refresh-device").onclick = loadDevice;
+async function loadDevice() {
+  const d = await api.json("/api/device");
+  const fmtRemain = d.remain_in != null ? `${d.remain_in}" (${d.remain_cm} cm)` : "?";
+  const rows = [
+    ["Host", d.host], ["Reachable", d.ok ? "yes" : "NO — " + (d.error || "")],
+    ["State", d.state], ["Stage", d.stage], ["Error", d.error_field ?? d.error ?? "—"],
+    ["Tape remaining", fmtRemain], ["Cassette type", d.cassette_type],
+    ["Media", d.media_name || "?"], ["Online", d.online], ["Power", d.capacity != null ? d.capacity + "%" : "?"],
+    ["Ready", d.ready ? "yes" : "no"], ["Total prints", d.total_prints], ["Last printed", d.last_printed || "—"],
+  ];
+  $("#device-table").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v ?? "—"}</td></tr>`).join("");
+  $("#device-raw").textContent = d.raw || "(no status body)";
+}
+
+// ============================ SETTINGS =====================================
+async function loadSettings() {
+  const r = await api.json("/api/settings");
+  settingsCache = r.settings;
+  $("#set-host").value = r.settings.host;
+  $("#set-media").value = r.settings.media_width;
+  $("#set-mode").value = r.settings.mode;
+  $("#set-cut").value = r.settings.cut;
+  $("#set-bg").value = toHex(r.settings.background);
+  $("#set-units").value = r.settings.units;
+  design.media_mm = r.settings.media_width;
+  design.background = r.settings.background;
+}
+$("#btn-save-settings").onclick = async () => {
+  const body = {
+    host: $("#set-host").value, media_width: +$("#set-media").value,
+    mode: $("#set-mode").value, cut: $("#set-cut").value,
+    font: $("#set-font").value || null, background: $("#set-bg").value, units: $("#set-units").value,
+  };
+  const r = await api.post("/api/settings", body);
+  if (r.ok) { settingsCache = r.settings; flash("#settings-status", "saved"); pollStatus(); }
+};
+
+async function loadFonts() {
+  const { fonts } = await api.json("/api/fonts");
+  window.__fonts = fonts;
+  fillFontSelect($("#set-font"), settingsCache.font);
+}
+function fillFontSelect(sel, current) {
+  if (!sel) return;
+  const fonts = window.__fonts || [];
+  sel.innerHTML = `<option value="">(default)</option>` + fonts.map(f => `<option ${f === current ? "selected" : ""}>${f}</option>`).join("");
+}
+
+// ============================ ABOUT / HISTORY ==============================
+async function loadAbout() {
+  const a = await api.json("/api/about");
+  const rows = [["Version", a.version], ["Python", a.python], ["Platform", a.platform],
+    ["Hostname", a.hostname], ["Runtime dir", a.runtime_dir], ["Free memory", a.free_memory],
+    ["Printer", a.printer_model]];
+  $("#about-table").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+}
+async function loadHistory() {
+  const { history } = await api.json("/api/history");
+  const ul = $("#history-list"); ul.innerHTML = "";
+  if (!history.length) { ul.innerHTML = `<li class="muted">No prints yet.</li>`; return; }
+  history.forEach(h => {
+    const li = document.createElement("li");
+    li.innerHTML = `<div class="h-meta"><b>${h.name || "(untitled)"}</b><br>
+      <small>${h.timestamp} · ${h.media_mm}mm · ${h.bytes} B</small></div>
+      <button data-load>Load</button><button data-del>✕</button>`;
+    li.querySelector("[data-load]").onclick = () => {
+      if (h.display_list) { design = { ...newDesign(), ...h.display_list }; selected = design.elements?.length ? 0 : null;
+        $$(".tab").forEach(x => x.classList.remove("active")); $$(".panel").forEach(x => x.classList.remove("active"));
+        $(`.tab[data-tab="edit"]`).classList.add("active"); $("#tab-edit").classList.add("active");
+        $("#edit-media").value = design.media_mm; renderEditor(); }
+    };
+    li.querySelector("[data-del]").onclick = async () => { await api.del("/api/history/" + h.id); li.remove(); };
+    ul.appendChild(li);
+  });
+}
+
+// ---- utils ------------------------------------------------------------------
+function flash(sel, msg) { const e = $(sel); if (e) e.textContent = msg; }
+function escapeAttr(s) { return String(s).replace(/"/g, "&quot;"); }
+function toHex(c) {
+  if (!c) return "#000000";
+  if (c[0] === "#") return c;
+  const named = { white: "#ffffff", black: "#000000", red: "#ff0000", green: "#008000", blue: "#0000ff", yellow: "#ffff00" };
+  return named[c.toLowerCase()] || "#000000";
+}

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Labler — VC-500W</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>
+      <span class="logo">🏷️</span>
+      <span>Labler <small id="version">v…</small></span>
+    </h1>
+    <div id="status-pill" class="pill" title="printer status">status…</div>
+  </header>
+
+  <nav id="tabs">
+    <button class="tab active" data-tab="print">Print</button>
+    <button class="tab" data-tab="edit">Edit</button>
+    <button class="tab" data-tab="device">Device</button>
+    <button class="tab" data-tab="settings">Settings</button>
+    <button class="tab" data-tab="about">About</button>
+  </nav>
+
+  <main>
+    <!-- ============ PRINT ============ -->
+    <section id="tab-print" class="panel active">
+      <h2>Print</h2>
+      <div class="print-layout">
+        <div class="preview-col">
+          <div class="tape" id="print-preview-wrap">
+            <img id="print-preview" alt="label preview">
+          </div>
+        </div>
+        <div class="controls">
+          <label>Tape width
+            <select id="print-media">
+              <option value="25">25 mm</option>
+              <option value="50">50 mm</option>
+            </select>
+          </label>
+          <label>Mode
+            <select id="print-mode">
+              <option value="vivid">vivid</option>
+              <option value="normal">normal</option>
+            </select>
+          </label>
+          <label>Cut
+            <select id="print-cut">
+              <option value="full">full</option>
+              <option value="half">half</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+          <button id="btn-print" class="primary">🖨️ Print</button>
+          <button id="btn-reset">↻ Reset device</button>
+          <p class="hint" id="print-status"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ EDIT ============ -->
+    <section id="tab-edit" class="panel">
+      <h2>Edit</h2>
+      <div class="editor">
+        <aside class="elements">
+          <div class="add-buttons">
+            <button data-add="image">+ Image</button>
+            <button data-add="text">+ Text</button>
+            <button data-add="border">+ Border</button>
+          </div>
+          <ul id="element-list"></ul>
+          <div class="canvas-meta">
+            <label>Tape
+              <select id="edit-media">
+                <option value="25">25 mm</option>
+                <option value="50">50 mm</option>
+              </select>
+            </label>
+            <label>Length
+              <select id="edit-length">
+                <option value="auto">auto</option>
+                <option value="312">312 px</option>
+                <option value="624">624 px</option>
+                <option value="936">936 px</option>
+              </select>
+            </label>
+          </div>
+          <div class="design-io">
+            <input id="design-name" placeholder="design name">
+            <button id="btn-save-design">Save</button>
+            <button id="btn-load-design">Load…</button>
+            <button id="btn-new-design">New</button>
+          </div>
+        </aside>
+
+        <div class="canvas-col">
+          <div class="tape" id="canvas-wrap">
+            <img id="edit-preview" alt="label">
+            <div id="overlay"></div>
+          </div>
+          <p class="hint">Drag the selected element on the canvas; fine-tune at right.</p>
+        </div>
+
+        <aside class="props" id="props">
+          <p class="muted">Select or add an element to edit its properties.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ DEVICE ============ -->
+    <section id="tab-device" class="panel">
+      <h2>Device — Brother VC-500W</h2>
+      <button id="btn-refresh-device">Refresh</button>
+      <table class="kv" id="device-table"></table>
+      <details>
+        <summary>Raw status.xml</summary>
+        <pre id="device-raw" class="raw"></pre>
+      </details>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section id="tab-settings" class="panel">
+      <h2>Settings</h2>
+      <details open><summary>Printer</summary>
+        <div class="form">
+          <label>Host / IP <input id="set-host"></label>
+          <label>Default media
+            <select id="set-media"><option value="25">25 mm</option><option value="50">50 mm</option></select>
+          </label>
+          <label>Mode <select id="set-mode"><option>vivid</option><option>normal</option></select></label>
+          <label>Cut <select id="set-cut"><option>full</option><option>half</option><option>none</option></select></label>
+        </div>
+      </details>
+      <details><summary>Editor defaults</summary>
+        <div class="form">
+          <label>Default font <select id="set-font"></select></label>
+          <label>Background <input type="color" id="set-bg" value="#ffffff"></label>
+        </div>
+      </details>
+      <details><summary>Display</summary>
+        <div class="form">
+          <label>Units <select id="set-units"><option value="in">inches</option><option value="cm">cm</option></select></label>
+        </div>
+      </details>
+      <button id="btn-save-settings" class="primary">Save settings</button>
+      <p class="hint" id="settings-status"></p>
+    </section>
+
+    <!-- ============ ABOUT ============ -->
+    <section id="tab-about" class="panel">
+      <h2>About</h2>
+      <table class="kv" id="about-table"></table>
+      <h3>Print history</h3>
+      <ul id="history-list" class="history"></ul>
+    </section>
+  </main>
+
+  <!-- load-design modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Load design</h3>
+      <ul id="design-list" class="design-list"></ul>
+      <button id="modal-close">Close</button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -5,9 +5,22 @@ A program to print labels **directly** to a Brother **VC-500W** ZINK full-color 
 the LAN, replacing Brother's clunky official software. This is a subproject of the `D:\hw` home
 network workspace.
 
-**Current state:** research/scaffolding. `README.md` documents the printer, its reverse-engineered
-protocol, and existing open-source code. No application code exists yet — read `README.md` first to
-pick up context.
+**Current state (v0.2.0):** working CLI **and** a Flask web label designer. The verified core
+(`protocol`/`render`/`compose`/`status`/`config`) prints to our firmware; the web app
+(`src/labler/web/`) is a 5-tab UI (Print/Edit/Device/Settings/About) over it. Run with
+`uv run labler-web` → http://localhost:5000. See `specs/flask-app.md` for the design and
+`README.md` for the printer/protocol background.
+
+### Web app runtime data (code/runtime split)
+- **Code** lives in this repo. **Runtime data** lives under `~/.labler/` (Windows
+  `%USERPROFILE%\.labler\`), created on first run: `settings.json`, `logs/events.jsonl`,
+  `assets/` (uploaded bitmaps), `designs/<id>/` (saved display-lists + previews),
+  `history.jsonl` (print log). `.venv` rebuilds / re-clones never lose this state.
+- The web app's `~/.labler/settings.json` is the app authority and is SEPARATE from the CLI's
+  `~/.config/labler/config.json`. Web default host is the IPv4 `192.168.25.219` (the mDNS name
+  resolved to IPv6 this session and refused :9100).
+- Printer access is serialized with a module-level lock (VC-500W = one :9100 connection at a time),
+  so two browser tabs can't collide. The print path is the same verified `protocol.print_jpeg`.
 
 ## The printer in one paragraph
 ZINK (Zero-Ink) **full-color** printer — *not* a QL-/PT-series monochrome thermal unit. 313 DPI
