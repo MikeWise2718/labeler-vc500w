@@ -128,12 +128,11 @@ _RENDERERS = {
 }
 
 
-def render_display_list(dl: dict, *, fmt: str = "JPEG") -> bytes:
-    """Composite a display-list to print-ready bytes.
+def _compose(dl: dict) -> tuple[Image.Image, str]:
+    """Composite a display-list into a final RGBA canvas. Returns (canvas, background).
 
-    fmt="JPEG" (default) is what goes to the printer — flattened on white with 4:4:4
-    subsampling for color fidelity (via render._encode_jpeg). fmt="PNG" is for the
-    editor preview (keeps it cheap and lossless; alpha flattened on the background).
+    Shared by render_display_list and measure_display_list so we never composite twice
+    or let the two disagree on dimensions.
     """
     media = media_for(int(dl.get("media_mm", 25)))
     width = media.width_px
@@ -159,6 +158,53 @@ def render_display_list(dl: dict, *, fmt: str = "JPEG") -> bytes:
         if renderer is None:
             raise ValueError(f"unknown element type {etype!r}")
         renderer(canvas, el)
+
+    # Whole-label rotation, applied AFTER compositing. The printer always prints at
+    # the media WIDTH across the tape (312px for 25mm); the length axis is free. So a
+    # 90/270 rotation swaps the axes — what ran down the long (tape-length) axis now
+    # runs across the 25mm width — and we then re-fit the result to the media width so
+    # the physical across-tape constraint still holds. This is the "flip to use less
+    # tape" control: a tall design rotated to lie along the tape can be much shorter.
+    rotate = int(dl.get("rotate", 0))
+    if rotate:
+        canvas = _apply_rotate(canvas, rotate)
+        if canvas.width != width:
+            scale = width / canvas.width
+            canvas = canvas.resize((width, max(1, round(canvas.height * scale))), Image.LANCZOS)
+
+    return canvas, background
+
+
+def measure_display_list(dl: dict) -> dict:
+    """Composite (but don't encode) and report the physical size of the label.
+
+    Returns px dimensions plus mm/cm/inches. `length_*` is the tape-length axis — the
+    amount of tape the print will consume; `width_*` is the across-tape dimension
+    (the media width, unless a rotation reshaped it). 12.48 px/mm at 313 DPI.
+    """
+    from .config import PX_PER_MM
+
+    canvas, _ = _compose(dl)
+    w_mm = canvas.width / PX_PER_MM
+    l_mm = canvas.height / PX_PER_MM
+    return {
+        "width_px": canvas.width,
+        "length_px": canvas.height,
+        "width_mm": round(w_mm, 1),
+        "length_mm": round(l_mm, 1),
+        "length_cm": round(l_mm / 10, 1),
+        "length_in": round(l_mm / 25.4, 2),
+    }
+
+
+def render_display_list(dl: dict, *, fmt: str = "JPEG") -> bytes:
+    """Composite a display-list to print-ready bytes.
+
+    fmt="JPEG" (default) is what goes to the printer — flattened on white with 4:4:4
+    subsampling for color fidelity (via render._encode_jpeg). fmt="PNG" is for the
+    editor preview (keeps it cheap and lossless; alpha flattened on the background).
+    """
+    canvas, background = _compose(dl)
 
     if fmt.upper() == "PNG":
         import io

@@ -53,6 +53,22 @@ def test_render_image_without_source_is_ok_not_500(client):
     assert r.mimetype == "image/png"
 
 
+def test_render_sets_length_headers(client):
+    dl = {"media_mm": 25, "length_px": 600, "elements": []}
+    r = client.post("/api/render", json=dl)
+    assert r.status_code == 200
+    assert r.headers["X-Label-Length-Px"] == "600"
+    assert float(r.headers["X-Label-Length-Cm"]) > 0
+
+
+def test_measure_endpoint(client):
+    dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
+    m = client.post("/api/measure", json=dl).get_json()
+    assert m["ok"]
+    assert m["width_px"] == 312
+    assert m["length_px"] < 600  # rotated short
+
+
 def test_settings_roundtrip(client):
     r = client.post("/api/settings", json={"host": "10.0.0.9", "media_width": 50})
     assert r.get_json()["ok"]

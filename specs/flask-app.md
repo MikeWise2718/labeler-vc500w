@@ -143,6 +143,19 @@ Version in top-left header (`v{{ version }}` from `__version__`). Mobile-respons
 41 tests pass (`uv run pytest`). The print path is the verified `protocol.print_jpeg`;
 the web layer serializes printer access with a module-level lock.
 
+**v0.3.0 — tape view + whole-label rotation.** Added so the user can SEE how much tape
+a label will consume and flip it to minimize that:
+- `compose.py`: `rotate` (0/90/180/270) applied to the whole composed canvas (re-fit to
+  media width after 90/270, since the across-tape dimension is physically fixed); new
+  `measure_display_list()` returns px + mm/cm/inches without re-encoding (shared `_compose`).
+- API: `/api/render` returns `X-Label-{Width,Length}-Px` + `X-Label-Length-{Cm,In}` headers;
+  new `POST /api/measure`. Print confirm dialog states the tape length first.
+- UI: horizontal **tape view** (label shown as it exits the printer: 25 mm tall, length
+  running right) with a cm ruler + "Tape used: X cm" readout on both Edit and Print tabs.
+  "⟳ Rotate label" button cycles 90°. The edit canvas stays unrotated (so the drag overlay
+  coords remain valid); the tape view shows the real rotated result.
+- 48 tests pass.
+
 ## Conventions checklist (workspace Flask rules)
 
 - [ ] Version in header from `__version__`; bump on every code change

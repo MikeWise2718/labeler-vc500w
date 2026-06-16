@@ -122,6 +122,32 @@ def test_unknown_element_type_raises():
         compose.render_display_list(dl, fmt="PNG")
 
 
+def test_rotate_90_swaps_axes_and_refits_to_media_width():
+    # A tall design (312 wide x 600 long) rotated 90 should still be 312 wide (the
+    # printer's fixed across-tape width) but now SHORT in length.
+    dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
+    img = _decode(compose.render_display_list(dl, fmt="PNG"))
+    assert img.width == media_for(25).width_px      # 312, re-fit to media width
+    assert img.height < 600                          # the long axis became short
+
+
+def test_measure_reports_length_in_cm_and_inches():
+    # 600 px length at 12.48 px/mm = 48.08 mm = ~4.8 cm = ~1.89 in
+    dl = {"media_mm": 25, "length_px": 600, "elements": []}
+    m = compose.measure_display_list(dl)
+    assert m["width_px"] == media_for(25).width_px
+    assert m["length_px"] == 600
+    assert m["length_cm"] == pytest.approx(4.8, abs=0.2)
+    assert m["length_in"] == pytest.approx(1.89, abs=0.05)
+
+
+def test_measure_matches_rendered_dimensions_after_rotation():
+    dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
+    m = compose.measure_display_list(dl)
+    img = _decode(compose.render_display_list(dl, fmt="PNG"))
+    assert (m["width_px"], m["length_px"]) == (img.width, img.height)
+
+
 def test_jpeg_output_is_decodable_and_rgb():
     dl = {"media_mm": 25, "length_px": 80, "elements": []}
     img = _decode(compose.render_display_list(dl, fmt="JPEG"))

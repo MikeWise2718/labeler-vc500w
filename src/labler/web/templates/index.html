@@ -29,9 +29,11 @@
       <h2>Print</h2>
       <div class="print-layout">
         <div class="preview-col">
-          <div class="tape" id="print-preview-wrap">
-            <img id="print-preview" alt="label preview">
+          <div class="tapeview" id="print-tapeview">
+            <div class="tape-strip"><img id="print-preview" alt="label preview"></div>
+            <div class="tape-ruler" id="print-ruler"></div>
           </div>
+          <p class="tape-used" id="print-tape-used"></p>
         </div>
         <div class="controls">
           <label>Tape width
@@ -96,11 +98,20 @@
         </aside>
 
         <div class="canvas-col">
+          <div class="canvas-toolbar">
+            <button id="btn-rotate-label" title="Rotate the whole label 90° — flip it to use less tape">⟳ Rotate label <span id="rotate-deg">0°</span></button>
+            <span class="tape-used" id="edit-tape-used"></span>
+          </div>
           <div class="tape" id="canvas-wrap">
             <img id="edit-preview" alt="label">
             <div id="overlay"></div>
           </div>
-          <p class="hint">Drag the selected element on the canvas; fine-tune at right.</p>
+          <p class="hint">Drag the selected element to move it; corner handle resizes. Use <b>Rotate label</b> to flip the whole design.</p>
+          <h4 style="margin:14px 0 4px">Tape preview (as it prints)</h4>
+          <div class="tapeview" id="edit-tapeview">
+            <div class="tape-strip"><img id="edit-tape-img" alt="tape preview"></div>
+            <div class="tape-ruler" id="edit-ruler"></div>
+          </div>
         </div>
 
         <aside class="props" id="props">

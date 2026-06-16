@@ -20,7 +20,7 @@ let renderTimer = null;
 let settingsCache = {};
 
 function newDesign() {
-  return { name: "", media_mm: 25, length_px: "auto", background: "white", elements: [] };
+  return { name: "", media_mm: 25, length_px: "auto", rotate: 0, background: "white", elements: [] };
 }
 
 // ---- tabs -------------------------------------------------------------------
@@ -163,12 +163,58 @@ function scheduleRender() {
 
 async function renderCanvas() {
   syncMediaLength();
+  // The edit canvas always shows the design UNROTATED so the drag overlay's element
+  // coordinates stay valid. Whole-label rotation is shown in the tape preview below.
+  const editDL = { ...design, rotate: 0 };
   const blob = await fetch("/api/render", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(design),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editDL),
   }).then(r => r.ok ? r.blob() : null);
   const img = $("#edit-preview");
   if (blob) img.src = URL.createObjectURL(blob);
   drawOverlay();
+  // Tape preview reflects the REAL design (with rotation) — what actually prints.
+  renderTapeView("#edit-tape-img", "#edit-ruler", "#edit-tape-used", design);
+}
+
+// Render the horizontal "tape view": the label as it exits the printer. The render
+// is 312px wide (across 25mm) x N px long; we rotate it 90deg so across-tape becomes
+// the strip height, and draw a cm ruler + "Tape used" readout from the response dims.
+async function renderTapeView(imgSel, rulerSel, usedSel, dl) {
+  const resp = await fetch("/api/render", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dl),
+  });
+  if (!resp.ok) return;
+  const wpx = +resp.headers.get("X-Label-Width-Px");
+  const lpx = +resp.headers.get("X-Label-Length-Px");
+  const cm = +resp.headers.get("X-Label-Length-Cm");
+  const inch = +resp.headers.get("X-Label-Length-In");
+  const blob = await resp.blob();
+  const img = $(imgSel);
+  if (img) {
+    const strip = img.parentElement;
+    const TAPE_H = parseInt(getComputedStyle(strip).getPropertyValue("--tape-h")) || 64;
+    const scale = TAPE_H / wpx;            // map across-tape px -> on-screen strip height
+    img.style.width = TAPE_H + "px";       // post-rotation, image WIDTH (=wpx) becomes height
+    img.style.height = (lpx * scale) + "px";
+    strip.style.width = (lpx * scale) + "px";
+    img.src = URL.createObjectURL(blob);
+  }
+  drawRuler(rulerSel, cm, lpx * (parseInt(getComputedStyle($(imgSel).parentElement).getPropertyValue("--tape-h")) / wpx || 1));
+  const u = $(usedSel);
+  if (u) u.textContent = `Tape used: ${cm} cm (${inch}″)`;
+}
+
+function drawRuler(sel, totalCm, widthPx) {
+  const ruler = $(sel); if (!ruler) return;
+  ruler.innerHTML = ""; ruler.style.width = widthPx + "px";
+  if (!totalCm || !widthPx) return;
+  const pxPerCm = widthPx / totalCm;
+  for (let c = 0; c <= Math.floor(totalCm); c++) {
+    const t = document.createElement("div");
+    t.className = "tick"; t.style.left = (c * pxPerCm) + "px";
+    if (c % 1 === 0) t.innerHTML = `<span>${c}</span>`;
+    ruler.appendChild(t);
+  }
 }
 
 function syncMediaLength() {
@@ -225,6 +271,15 @@ function renderProps2Sync() { // update number inputs live during drag without f
 $("#edit-media").addEventListener("change", () => { syncMediaLength(); renderCanvas(); });
 $("#edit-length").addEventListener("change", () => { syncMediaLength(); renderCanvas(); });
 
+// Rotate the WHOLE label 90deg each click (0->90->180->270->0). Lets you flip a long
+// design so it lies across the tape and uses far less length.
+$("#btn-rotate-label").onclick = () => {
+  design.rotate = ((design.rotate || 0) + 90) % 360;
+  syncRotateLabel();
+  renderCanvas();
+};
+function syncRotateLabel() { $("#rotate-deg").textContent = (design.rotate || 0) + "°"; }
+
 // ---- design save / load -----------------------------------------------------
 $("#btn-save-design").onclick = async () => {
   design.name = $("#design-name").value || "design";
@@ -241,9 +296,11 @@ $("#btn-load-design").onclick = async () => {
     li.querySelector(".d-name").onclick = async () => {
       design = await api.json("/api/designs/" + d.id);
       if (!design.elements) design = newDesign();
+      if (design.rotate == null) design.rotate = 0;
       $("#design-name").value = design.name || "";
       $("#edit-media").value = design.media_mm; $("#edit-length").value = design.length_px;
       selected = design.elements.length ? 0 : null;
+      syncRotateLabel();
       $("#modal").classList.add("hidden"); renderEditor();
     };
     li.querySelector("[data-del]").onclick = async () => { await api.del("/api/designs/" + d.id); li.remove(); };
@@ -255,16 +312,17 @@ $("#modal-close").onclick = () => $("#modal").classList.add("hidden");
 
 // ============================ PRINT ========================================
 async function renderPrintPreview() {
-  const blob = await fetch("/api/render", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(design),
-  }).then(r => r.ok ? r.blob() : null);
-  if (blob) $("#print-preview").src = URL.createObjectURL(blob);
   $("#print-media").value = design.media_mm;
+  // Print tab shows the true tape view (rotated as the design specifies) + tape used.
+  renderTapeView("#print-preview", "#print-ruler", "#print-tape-used", design);
 }
 
 $("#btn-print").onclick = async () => {
-  if (!confirm("Print this label to the VC-500W?")) return;
   design.media_mm = +$("#print-media").value;
+  // Confirm with the actual tape length so the user knows before burning tape.
+  const m = await api.post("/api/measure", design);
+  const len = m.ok ? `${m.length_cm} cm (${m.length_in}″)` : "?";
+  if (!confirm(`Print this label? It will use ${len} of tape.`)) return;
   const body = { ...design, mode: $("#print-mode").value, cut: $("#print-cut").value };
   flash("#print-status", "printing… (hold tight, ~10–20 s)");
   const r = await api.post("/api/print", body);

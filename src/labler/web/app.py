@@ -117,11 +117,31 @@ def create_app() -> Flask:
         dl = _resolve_assets(request.get_json(force=True))
         try:
             png = compose.render_display_list(dl, fmt="PNG")
+            dims = compose.measure_display_list(dl)
         except Exception as e:  # malformed display-list -> 400, never a 500
             log_event("render.error", str(e), kind=type(e).__name__)
             return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
         from flask import Response
-        return Response(png, mimetype="image/png")
+        resp = Response(png, mimetype="image/png")
+        # Physical size travels in headers so the UI can show "Tape used: X cm"
+        # without decoding the PNG or making a second request.
+        resp.headers["X-Label-Width-Px"] = str(dims["width_px"])
+        resp.headers["X-Label-Length-Px"] = str(dims["length_px"])
+        resp.headers["X-Label-Length-Cm"] = str(dims["length_cm"])
+        resp.headers["X-Label-Length-In"] = str(dims["length_in"])
+        resp.headers["Access-Control-Expose-Headers"] = (
+            "X-Label-Width-Px,X-Label-Length-Px,X-Label-Length-Cm,X-Label-Length-In"
+        )
+        return resp
+
+    @app.post("/api/measure")
+    def api_measure():
+        """Body = display-list -> physical dimensions (px/mm/cm/in) without rendering."""
+        dl = _resolve_assets(request.get_json(force=True))
+        try:
+            return jsonify(ok=True, **compose.measure_display_list(dl))
+        except Exception as e:
+            return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
 
     @app.post("/api/print")
     def api_print():
