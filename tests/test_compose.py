@@ -104,6 +104,18 @@ def test_z_order_later_z_paints_on_top():
     assert b > 180 and r < 80  # blue on top wins
 
 
+def test_image_element_without_source_does_not_crash():
+    # An image element added in the editor before a file is picked has no src/src_id.
+    # It must render a placeholder, not raise KeyError.
+    dl = {
+        "media_mm": 25,
+        "length_px": 100,
+        "elements": [{"type": "image", "x": 0, "y": 0, "w": 100, "h": 80, "z": 0}],
+    }
+    out = compose.render_display_list(dl, fmt="PNG")
+    assert _decode(out).width == media_for(25).width_px  # rendered fine
+
+
 def test_unknown_element_type_raises():
     dl = {"media_mm": 25, "elements": [{"type": "wormhole"}]}
     with pytest.raises(ValueError, match="unknown element type"):

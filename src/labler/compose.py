@@ -61,7 +61,20 @@ def _element_bottom(el: dict) -> int:
 
 
 def _render_image_element(canvas: Image.Image, el: dict) -> None:
-    img = _resolve_image(el["src"])
+    src = el.get("src")
+    if src is None:
+        # Image element with no source picked yet. Draw a faint placeholder box so
+        # the editor shows "an image goes here" instead of crashing or rendering
+        # nothing. The placeholder never reaches the printer: by the time a design
+        # is printed, an unsourced image either has a file or is removed.
+        if el.get("placeholder", True):
+            d = ImageDraw.Draw(canvas)
+            x, y = int(el.get("x", 0)), int(el.get("y", 0))
+            w, h = int(el.get("w", 0)), int(el.get("h", 0))
+            if w > 1 and h > 1:
+                d.rectangle([x, y, x + w - 1, y + h - 1], outline="#bbbbbb", width=1)
+        return
+    img = _resolve_image(src)
     w, h = int(el.get("w", img.width)), int(el.get("h", img.height))
     fit = el.get("fit", "contain")
     if fit == "stretch":

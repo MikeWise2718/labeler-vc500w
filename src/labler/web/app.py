@@ -117,8 +117,9 @@ def create_app() -> Flask:
         dl = _resolve_assets(request.get_json(force=True))
         try:
             png = compose.render_display_list(dl, fmt="PNG")
-        except (ValueError, OSError) as e:
-            return jsonify(ok=False, error=str(e)), 400
+        except Exception as e:  # malformed display-list -> 400, never a 500
+            log_event("render.error", str(e), kind=type(e).__name__)
+            return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
         from flask import Response
         return Response(png, mimetype="image/png")
 
@@ -129,8 +130,9 @@ def create_app() -> Flask:
         s = _settings()
         try:
             jpeg = compose.render_display_list(dl, fmt="JPEG")
-        except (ValueError, OSError) as e:
-            return jsonify(ok=False, error=str(e)), 400
+        except Exception as e:
+            log_event("render.error", str(e), kind=type(e).__name__)
+            return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
         mode = body.get("mode", s.mode)
         cut = body.get("cut", s.cut)
         try:

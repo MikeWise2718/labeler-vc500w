@@ -44,6 +44,15 @@ def test_render_returns_png(client):
     Image.open(io.BytesIO(r.data))  # decodable
 
 
+def test_render_image_without_source_is_ok_not_500(client):
+    # Regression: adding an image element before picking a file used to KeyError -> 500.
+    dl = {"media_mm": 25, "length_px": 100, "elements": [
+        {"type": "image", "x": 0, "y": 0, "w": 100, "h": 80}]}
+    r = client.post("/api/render", json=dl)
+    assert r.status_code == 200
+    assert r.mimetype == "image/png"
+
+
 def test_settings_roundtrip(client):
     r = client.post("/api/settings", json={"host": "10.0.0.9", "media_width": 50})
     assert r.get_json()["ok"]
