@@ -61,31 +61,22 @@ label select, label input { margin-top: 3px; }
 .print-layout { display: flex; gap: 24px; flex-wrap: wrap; }
 .controls { min-width: 200px; }
 
-/* ---- tape view: the label shown as it physically exits the printer ----
-   The render is 312px wide (across 25mm tape) x N px long. We lay the tape flat:
-   a strip 25mm tall on screen with the length running left->right. The render
-   <img> is rotated 90deg CW so its width (across-tape) becomes the strip HEIGHT. */
-.tapeview { display: inline-block; }
-.tape-strip {
-  --tape-h: 64px;                 /* on-screen height of the 25mm-wide tape */
-  height: var(--tape-h);
-  background: repeating-linear-gradient(45deg,#f3f3f3,#f3f3f3 6px,#ececec 6px,#ececec 12px);
-  border: 1px solid var(--line); border-radius: 3px;
-  overflow: hidden; white-space: nowrap; position: relative;
-  display: inline-block;
-}
-.tape-strip img {
-  /* Server returns the tape view already landscape (?view=tape), so we display it
-     natively. JS sets height = strip height and width = scaled tape length. */
+/* ---- print view: the EXACT image that prints, in print orientation ----
+   25mm tape width = image width (the short way on screen); length runs DOWNWARD.
+   A vertical cm ruler sits to the left marking the tape length. No rotation: the
+   <img> shown here is byte-identical (PNG vs JPEG) to what feeds out of the printer. */
+.printview { display: inline-flex; align-items: flex-start; gap: 4px; }
+.pv-img {
   image-rendering: pixelated; background: #fff; display: block;
+  border: 1px solid var(--line); border-radius: 2px;
 }
-.tape-ruler {
-  position: relative; height: 16px; font-size: 9px; color: var(--muted);
-  border-top: 1px solid var(--line); margin-top: 2px;
+.pv-ruler {
+  position: relative; width: 18px; font-size: 9px; color: var(--muted);
+  border-right: 1px solid var(--line);
 }
-.tape-ruler .tick { position: absolute; top: 0; border-left: 1px solid var(--muted); height: 5px; }
-.tape-ruler .tick span { position: absolute; top: 5px; left: 2px; }
-.tape-used { font-size: .9rem; color: var(--accent); margin: 6px 0 0; font-weight: 600; }
+.pv-ruler .tick { position: absolute; right: 0; border-top: 1px solid var(--muted); width: 5px; }
+.pv-ruler .tick span { position: absolute; right: 6px; top: -5px; }
+.tape-used { font-size: .9rem; color: var(--accent); margin: 8px 0 0; font-weight: 600; }
 .canvas-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
 .canvas-toolbar #rotate-deg { color: var(--accent); }
 

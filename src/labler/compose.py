@@ -197,21 +197,16 @@ def measure_display_list(dl: dict) -> dict:
     }
 
 
-def render_display_list(dl: dict, *, fmt: str = "JPEG", view_rotate: int = 0) -> bytes:
+def render_display_list(dl: dict, *, fmt: str = "JPEG") -> bytes:
     """Composite a display-list to print-ready bytes.
 
     fmt="JPEG" (default) is what goes to the printer — flattened on white with 4:4:4
     subsampling for color fidelity (via render._encode_jpeg). fmt="PNG" is for the
     editor preview (keeps it cheap and lossless; alpha flattened on the background).
-
-    view_rotate is a PRESENTATION-only extra rotation applied after compositing — used
-    by the "tape view" to deliver the label already laid out landscape (length running
-    left→right) so the browser shows it natively with no CSS transforms. It does NOT
-    affect what prints (the printer uses the JPEG render with view_rotate=0).
+    The PNG preview and the JPEG print are the SAME render in the SAME orientation —
+    what you see is what feeds out of the printer.
     """
     canvas, background = _compose(dl)
-    if view_rotate:
-        canvas = _apply_rotate(canvas, view_rotate)
 
     if fmt.upper() == "PNG":
         import io

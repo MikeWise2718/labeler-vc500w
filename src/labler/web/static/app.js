@@ -163,8 +163,9 @@ function scheduleRender() {
 
 async function renderCanvas() {
   syncMediaLength();
-  // The edit canvas always shows the design UNROTATED so the drag overlay's element
-  // coordinates stay valid. Whole-label rotation is shown in the tape preview below.
+  // The edit canvas shows the design UNROTATED so the drag overlay's element
+  // coordinates stay valid while you compose. The "Print preview" below shows the
+  // REAL rotated render — exactly what feeds out of the printer.
   const editDL = { ...design, rotate: 0 };
   const blob = await fetch("/api/render", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editDL),
@@ -172,48 +173,46 @@ async function renderCanvas() {
   const img = $("#edit-preview");
   if (blob) img.src = URL.createObjectURL(blob);
   drawOverlay();
-  // Tape preview reflects the REAL design (with rotation) — what actually prints.
-  renderTapeView("#edit-tape-img", "#edit-ruler", "#edit-tape-used", design);
+  renderPrintRender("#edit-tape-img", "#edit-ruler", "#edit-tape-used", design);
 }
 
-// Render the horizontal "tape view": the label as it exits the printer. The render
-// is 312px wide (across 25mm) x N px long; we rotate it 90deg so across-tape becomes
-// the strip height, and draw a cm ruler + "Tape used" readout from the response dims.
-async function renderTapeView(imgSel, rulerSel, usedSel, dl) {
-  // ?view=tape: the server returns the label already rotated to landscape (length
-  // runs left→right), so the <img> displays natively — no CSS rotation/distortion.
-  const resp = await fetch("/api/render?view=tape", {
+// Show the EXACT print render (same image the printer gets, just PNG). Orientation
+// matches the printer: 25mm tape width = image width (the short way), length = image
+// height (the long way, running top→bottom). A vertical cm ruler marks the length so
+// you can read how much tape it uses. No view rotation — preview == print.
+async function renderPrintRender(imgSel, rulerSel, usedSel, dl) {
+  const resp = await fetch("/api/render", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dl),
   });
   if (!resp.ok) return;
-  const wpx = +resp.headers.get("X-Label-Width-Px");   // across-tape (now image HEIGHT)
-  const lpx = +resp.headers.get("X-Label-Length-Px");  // tape length (now image WIDTH)
+  const wpx = +resp.headers.get("X-Label-Width-Px");   // across-tape (image width)
+  const lpx = +resp.headers.get("X-Label-Length-Px");  // tape length (image height)
   const cm = +resp.headers.get("X-Label-Length-Cm");
   const inch = +resp.headers.get("X-Label-Length-In");
   const blob = await resp.blob();
   const img = $(imgSel);
   if (!img) return;
-  const strip = img.parentElement;
-  const TAPE_H = parseInt(getComputedStyle(strip).getPropertyValue("--tape-h")) || 64;
-  const onscreenLen = lpx * (TAPE_H / wpx);   // scale length to the strip height
-  img.style.height = TAPE_H + "px";
-  img.style.width = onscreenLen + "px";
-  strip.style.width = onscreenLen + "px";
+  // Scale so the 25mm width shows at a fixed on-screen width; length follows aspect.
+  const TAPE_W = 60;                       // on-screen px for the 25mm tape width
+  const onscreenLen = lpx * (TAPE_W / wpx);
+  img.style.width = TAPE_W + "px";
+  img.style.height = onscreenLen + "px";
   img.src = URL.createObjectURL(blob);
-  drawRuler(rulerSel, cm, onscreenLen);
+  drawRuler(rulerSel, cm, onscreenLen);    // vertical ruler down the length
   const u = $(usedSel);
   if (u) u.textContent = `Tape used: ${cm} cm (${inch}″)`;
 }
 
-function drawRuler(sel, totalCm, widthPx) {
+// Vertical cm ruler: ticks down the length (height) of the print preview.
+function drawRuler(sel, totalCm, heightPx) {
   const ruler = $(sel); if (!ruler) return;
-  ruler.innerHTML = ""; ruler.style.width = widthPx + "px";
-  if (!totalCm || !widthPx) return;
-  const pxPerCm = widthPx / totalCm;
+  ruler.innerHTML = ""; ruler.style.height = heightPx + "px";
+  if (!totalCm || !heightPx) return;
+  const pxPerCm = heightPx / totalCm;
   for (let c = 0; c <= Math.floor(totalCm); c++) {
     const t = document.createElement("div");
-    t.className = "tick"; t.style.left = (c * pxPerCm) + "px";
-    if (c % 1 === 0) t.innerHTML = `<span>${c}</span>`;
+    t.className = "tick"; t.style.top = (c * pxPerCm) + "px";
+    t.innerHTML = `<span>${c}</span>`;
     ruler.appendChild(t);
   }
 }
@@ -329,8 +328,8 @@ $("#modal-close").onclick = () => $("#modal").classList.add("hidden");
 // ============================ PRINT ========================================
 async function renderPrintPreview() {
   $("#print-media").value = design.media_mm;
-  // Print tab shows the true tape view (rotated as the design specifies) + tape used.
-  renderTapeView("#print-preview", "#print-ruler", "#print-tape-used", design);
+  // Same exact print render as everywhere else — what you see is what feeds out.
+  renderPrintRender("#print-preview", "#print-ruler", "#print-tape-used", design);
 }
 
 $("#btn-print").onclick = async () => {
