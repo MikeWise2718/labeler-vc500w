@@ -88,6 +88,16 @@ def test_settings_roundtrip(client):
     assert got["settings"]["media_width"] == 50
 
 
+def test_custom_colors_roundtrip(client):
+    # defaults to an empty list, then persists what we set
+    got = client.get("/api/settings").get_json()
+    assert got["settings"]["custom_colors"] == []
+    r = client.post("/api/settings", json={"custom_colors": ["#112233", "#aabbcc"]})
+    assert r.get_json()["ok"]
+    got = client.get("/api/settings").get_json()
+    assert got["settings"]["custom_colors"] == ["#112233", "#aabbcc"]
+
+
 def test_asset_upload_and_serve(client):
     buf = io.BytesIO()
     Image.new("RGB", (20, 10), "red").save(buf, "PNG")

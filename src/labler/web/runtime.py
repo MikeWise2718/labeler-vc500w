@@ -17,7 +17,7 @@ authority and are a superset of the CLI's ~/.config/labler/config.json.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,6 +58,7 @@ class WebSettings:
     font: str | None = None            # default .ttf for text elements
     background: str = "white"          # default canvas background
     units: str = "in"                  # in | cm  (display only)
+    custom_colors: list[str] = field(default_factory=list)  # extra preset swatches (hex)
 
     @classmethod
     def load(cls) -> "WebSettings":

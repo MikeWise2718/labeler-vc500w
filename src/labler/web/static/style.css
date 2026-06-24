@@ -99,7 +99,14 @@ label select, label input { margin-top: 3px; }
 
 .canvas-col { text-align: center; }
 #canvas-wrap { display: inline-block; }
+/* overlay container passes clicks through to the image; only its boxes catch them */
 #overlay { position: absolute; inset: 6px; pointer-events: none; }
+/* per-element click target — invisible until hovered, so the canvas stays clean */
+.hit-box {
+  position: absolute; pointer-events: auto; cursor: pointer;
+  border: 1px solid transparent; border-radius: 2px;
+}
+.hit-box:hover { border-color: var(--accent); background: rgba(79,140,255,.06); }
 .sel-box {
   position: absolute; border: 1.5px dashed var(--accent); background: rgba(79,140,255,.08);
   pointer-events: auto; cursor: move;
@@ -109,6 +116,17 @@ label select, label input { margin-top: 3px; }
   background: var(--accent); border-radius: 2px; cursor: se-resize;
 }
 .props .form, .props label { font-size: .88rem; }
+
+/* color preset swatches */
+.swatches { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.swatch {
+  width: 18px; height: 18px; padding: 0; border-radius: 4px;
+  border: 1px solid var(--line); cursor: pointer;
+}
+.swatch:hover { border-color: var(--accent); transform: scale(1.12); }
+.swatch.active { border-color: var(--ink); box-shadow: 0 0 0 2px var(--accent); }
+/* keep the color input + swatches readable inside the muted <label> */
+label .swatches { margin-bottom: 2px; }
 
 /* DEVICE / ABOUT */
 table.kv { border-collapse: collapse; margin: 12px 0; }

@@ -133,7 +133,7 @@ function renderProps() {
     h += `<label>Text<input data-k="text" value="${escapeAttr(el.text)}"></label>`;
     h += `<label>Font<select data-k="font" id="prop-font"></select></label>`;
     h += num("font_size", "Size", 4);
-    h += `<label>Color<input type="color" data-k="color" value="${toHex(el.color)}"></label>`;
+    h += colorField("color", "Color", el.color);
     h += `<label>Align<select data-k="align"><option ${el.align==="left"?"selected":""}>left</option><option ${el.align==="center"?"selected":""}>center</option><option ${el.align==="right"?"selected":""}>right</option></select></label>`;
     h += num("x", "X") + num("y", "Y") + num("w", "Width", 1) + num("rotate", "Rotate");
   } else if (el.type === "image") {
@@ -141,7 +141,7 @@ function renderProps() {
     h += `<label>Fit<select data-k="fit"><option ${el.fit==="contain"?"selected":""}>contain</option><option ${el.fit==="stretch"?"selected":""}>stretch</option></select></label>`;
     h += num("x", "X") + num("y", "Y") + num("w", "Width", 1) + num("h", "Height", 1) + num("rotate", "Rotate");
   } else if (el.type === "border") {
-    h += `<label>Color<input type="color" data-k="color" value="${toHex(el.color)}"></label>`;
+    h += colorField("color", "Color", el.color);
     h += num("thickness", "Thickness", 1);
   }
   h += `</div>`;
@@ -150,11 +150,56 @@ function renderProps() {
     let v = inp.value;
     if (inp.type === "number") v = +v;
     el[inp.dataset.k] = v;
+    if (inp.dataset.k === "color") syncSwatches(inp.dataset.k, v);
     if (inp.dataset.k === "text") renderElementList();
     scheduleRender();
   });
+  wireSwatches(p, el);
   if (el.type === "image") $("#prop-pick").onclick = () => pickImageFor(el);
   if (el.type === "text") fillFontSelect($("#prop-font"), el.font);
+}
+
+// Standard palette for the preset swatches. Order roughly mirrors the printer's
+// vivid gamut (black/white + the 6 saturated primaries/secondaries) plus a few
+// useful greys. Customizable presets are appended from settings (custom_colors).
+const PALETTE = [
+  "#000000", "#ffffff", "#ff0000", "#00a000", "#0000ff",
+  "#ffff00", "#ff00ff", "#00bcd4", "#ff9800", "#795548",
+  "#9e9e9e", "#607d8b",
+];
+
+// A color <input type=color> plus a row of preset swatches that set it on click.
+function colorField(key, label, current) {
+  const cur = toHex(current);
+  const customs = (settingsCache.custom_colors || []);
+  const all = [...PALETTE, ...customs.filter(c => !PALETTE.includes(c.toLowerCase()))];
+  const sw = all.map(c =>
+    `<button type="button" class="swatch" data-swatch="${key}" data-color="${c}"
+       title="${c}" style="background:${c}"></button>`).join("");
+  return `<label>${label}
+    <input type="color" data-k="${key}" value="${cur}">
+    <span class="swatches" data-swatches="${key}">${sw}</span>
+  </label>`;
+}
+
+// Clicking a swatch writes its color into the matching <input type=color> and the
+// element, then re-renders. Highlights the active swatch.
+function wireSwatches(root, el) {
+  root.querySelectorAll("[data-swatch]").forEach(b => b.onclick = () => {
+    const key = b.dataset.swatch, color = b.dataset.color;
+    const inp = root.querySelector(`input[data-k="${key}"]`);
+    if (inp) inp.value = toHex(color);
+    el[key] = color;
+    syncSwatches(key, color);
+    scheduleRender();
+  });
+  // mark whichever swatch matches the current value
+  Object.keys(el).forEach(k => syncSwatches(k, el[k]));
+}
+function syncSwatches(key, color) {
+  const hex = toHex(color);
+  $$(`[data-swatches="${key}"] .swatch`).forEach(b =>
+    b.classList.toggle("active", toHex(b.dataset.color) === hex));
 }
 
 function scheduleRender() {
@@ -194,7 +239,7 @@ async function renderPrintRender(imgSel, rulerSel, usedSel, dl) {
   const img = $(imgSel);
   if (!img) return;
   // Scale so the 25mm width shows at a fixed on-screen width; length follows aspect.
-  const TAPE_W = 60;                       // on-screen px for the 25mm tape width
+  const TAPE_W = 90;                       // on-screen px for the 25mm tape width (50% bigger)
   const onscreenLen = lpx * (TAPE_W / wpx);
   img.style.width = TAPE_W + "px";
   img.style.height = onscreenLen + "px";
@@ -224,15 +269,37 @@ function syncMediaLength() {
   design.length_px = lv === "auto" ? "auto" : +lv;
 }
 
-// overlay: a selection box positioned over the preview, mapped from label px -> screen px
+// overlay: a clickable hit-box per element so you can select by clicking on the
+// canvas (not just via the list), plus a drag/resize selection box for the
+// currently selected element. Mapped from label px -> screen px.
 function drawOverlay() {
   const ov = $("#overlay"); ov.innerHTML = "";
-  const el = (selected != null) ? design.elements[selected] : null;
-  if (!el || el.type === "border") return;
   const img = $("#edit-preview");
   if (!img.naturalWidth) return;
   const scaleX = img.clientWidth / img.naturalWidth;
   const scaleY = img.clientHeight / img.naturalHeight;
+
+  // Top-most element wins a click on overlapping regions, so iterate by z (the
+  // last-drawn / highest-z element is checked first). We add hit-boxes in reverse
+  // z-order but rely on later DOM nodes being on top, so add lowest first.
+  design.elements.forEach((el, i) => {
+    if (el.type === "border" || i === selected) return;  // selected gets the full box below
+    const hit = document.createElement("div");
+    hit.className = "hit-box";
+    hit.style.left = (el.x * scaleX) + "px";
+    hit.style.top = (el.y * scaleY) + "px";
+    hit.style.width = (el.w * scaleX) + "px";
+    hit.style.height = ((el.h || 40) * scaleY) + "px";
+    hit.title = "click to select";
+    hit.addEventListener("pointerdown", e => {
+      e.preventDefault(); e.stopPropagation();
+      selected = i; renderEditor();
+    });
+    ov.appendChild(hit);
+  });
+
+  const el = (selected != null) ? design.elements[selected] : null;
+  if (!el || el.type === "border") return;
   const box = document.createElement("div");
   box.className = "sel-box";
   box.style.left = (el.x * scaleX) + "px";
@@ -395,12 +462,37 @@ async function loadSettings() {
   $("#set-units").value = r.settings.units;
   design.media_mm = r.settings.media_width;
   design.background = r.settings.background;
+  renderCustomColors();
 }
+
+// ---- custom color presets (Settings) ----------------------------------------
+function renderCustomColors() {
+  const box = $("#set-custom-colors");
+  const customs = settingsCache.custom_colors || [];
+  box.innerHTML = customs.length
+    ? customs.map(c =>
+        `<button type="button" class="swatch" title="${c} — click to remove"
+           data-remove="${c}" style="background:${c}"></button>`).join("")
+    : `<span class="muted" style="font-size:.8rem">none yet</span>`;
+  box.querySelectorAll("[data-remove]").forEach(b => b.onclick = () => {
+    settingsCache.custom_colors = (settingsCache.custom_colors || [])
+      .filter(c => c !== b.dataset.remove);
+    renderCustomColors();
+  });
+}
+$("#set-custom-add").onclick = () => {
+  const c = toHex($("#set-custom-pick").value);
+  const list = settingsCache.custom_colors || (settingsCache.custom_colors = []);
+  if (!list.map(x => x.toLowerCase()).includes(c.toLowerCase())) list.push(c);
+  renderCustomColors();
+};
+
 $("#btn-save-settings").onclick = async () => {
   const body = {
     host: $("#set-host").value, media_width: +$("#set-media").value,
     mode: $("#set-mode").value, cut: $("#set-cut").value,
     font: $("#set-font").value || null, background: $("#set-bg").value, units: $("#set-units").value,
+    custom_colors: settingsCache.custom_colors || [],
   };
   const r = await api.post("/api/settings", body);
   if (r.ok) { settingsCache = r.settings; flash("#settings-status", "saved"); pollStatus(); }
