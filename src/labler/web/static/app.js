@@ -5,6 +5,21 @@
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+// ---- editor debug logging ---------------------------------------------------
+// Compact console trace of element positions through the add/move/save/load
+// lifecycle. Off by default; enable with localStorage.setItem('labler_debug','1').
+// Each line shows [x,y w×h "text"] per element so you can see what the design holds.
+const DEBUG = localStorage.getItem("labler_debug") === "1";
+function elDigest(els) {
+  return (els || []).map(e => e.type === "border"
+    ? `border` : `${e.type}[${e.x},${e.y} ${e.w}×${e.h ?? "-"} z${e.z} "${(e.text ?? "").slice(0,8)}"]`
+  ).join("  ");
+}
+function dlog(tag, ...rest) {
+  if (!DEBUG) return;
+  console.log(`%c[labler] ${tag}`, "color:#4f8cff;font-weight:600", ...rest);
+}
 const api = {
   async json(url, opts) { const r = await fetch(url, opts); return r.json(); },
   async post(url, body) {
@@ -39,6 +54,7 @@ $$(".tab").forEach(t => t.addEventListener("click", () => {
 (async function boot() {
   const ping = await api.json("/api/ping");
   $("#version").textContent = "v" + ping.version;
+  if (DEBUG) console.log("%c[labler] editor debug logging ON — silence with localStorage.removeItem('labler_debug')", "color:#3ecf8e");
   await loadSettings();
   await loadFonts();
   pollStatus();
@@ -72,6 +88,7 @@ function addElement(type) {
   else if (type === "border") el = { type, z: 99, color: "black", thickness: 4 };
   design.elements.push(el);
   selected = design.elements.length - 1;
+  dlog(`addElement ${type} @y=${y0}`, elDigest(design.elements));
   if (type === "image") pickImageFor(el);
   renderEditor();
 }
@@ -200,16 +217,22 @@ function colorField(key, label, current) {
 // Clicking a swatch writes its color into the matching <input type=color> and the
 // element, then re-renders. Highlights the active swatch.
 function wireSwatches(root, el) {
-  root.querySelectorAll("[data-swatch]").forEach(b => b.onclick = () => {
-    const key = b.dataset.swatch, color = b.dataset.color;
-    const inp = root.querySelector(`input[data-k="${key}"]`);
-    if (inp) inp.value = toHex(color);
-    el[key] = color;
-    syncSwatches(key, color);
-    scheduleRender();
+  const keys = new Set();
+  root.querySelectorAll("[data-swatch]").forEach(b => {
+    keys.add(b.dataset.swatch);
+    b.onclick = () => {
+      const key = b.dataset.swatch, color = b.dataset.color;
+      const inp = root.querySelector(`input[data-k="${key}"]`);
+      if (inp) inp.value = toHex(color);
+      el[key] = color;
+      syncSwatches(key, color);
+      scheduleRender();
+    };
   });
-  // mark whichever swatch matches the current value
-  Object.keys(el).forEach(k => syncSwatches(k, el[k]));
+  // mark whichever swatch matches the current value — only for the color keys that
+  // actually have a swatch row (NOT every el property: el.font_size etc. are numbers
+  // and toHex() would crash on them, aborting the whole render -> broken-image bug).
+  keys.forEach(k => syncSwatches(k, el[k]));
 }
 function syncSwatches(key, color) {
   const hex = toHex(color);
@@ -228,9 +251,13 @@ async function renderCanvas() {
   // coordinates stay valid while you compose. The "Print preview" below shows the
   // REAL rotated render — exactly what feeds out of the printer.
   const editDL = { ...design, rotate: 0 };
-  const blob = await fetch("/api/render", {
+  dlog(`renderCanvas — sending ${editDL.elements.length} els, length_px=${editDL.length_px}:`, elDigest(editDL.elements));
+  const resp = await fetch("/api/render", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editDL),
-  }).then(r => r.ok ? r.blob() : null);
+  });
+  const blob = resp.ok ? await resp.blob() : null;
+  if (resp.ok) dlog(`renderCanvas — got PNG ${resp.headers.get("X-Label-Width-Px")}×${resp.headers.get("X-Label-Length-Px")} px`);
+  else dlog(`renderCanvas — /api/render FAILED ${resp.status}`);
   const img = $("#edit-preview");
   if (blob) img.src = URL.createObjectURL(blob);
   drawOverlay();
@@ -338,7 +365,11 @@ function enableDrag(box, el, sx, sy) {
       else { el.w = Math.max(8, Math.round(ow + dx)); if ("h" in el) el.h = Math.max(8, Math.round(oh + dy)); }
       drawOverlay(); renderProps2Sync();
     };
-    const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); scheduleRender(); };
+    const up = () => {
+      document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up);
+      dlog(`drag end (${mode}) el#${selected} → x=${el.x},y=${el.y} w=${el.w} h=${el.h ?? "-"}`, elDigest(design.elements));
+      scheduleRender();
+    };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
   };
@@ -372,7 +403,9 @@ $("#btn-save-design").onclick = async () => {
     $("#design-name").value = name;
   }
   design.name = name;
+  dlog(`SAVE "${name}" — POSTing elements:`, elDigest(design.elements));
   const r = await api.post("/api/designs", design);
+  dlog(`SAVE done id=${r.id}`, r);
   if (r.ok) { design.id = r.id; flash("#print-status", "saved design: " + r.id); }
 };
 $("#btn-new-design").onclick = () => {
@@ -393,6 +426,7 @@ $("#btn-load-design").onclick = async () => {
     li.innerHTML = `${d.preview ? `<img src="${d.preview}">` : ""}<span class="d-name">${d.name}</span><button data-del="${d.id}">✕</button>`;
     li.querySelector(".d-name").onclick = async () => {
       design = await api.json("/api/designs/" + d.id);
+      dlog(`LOAD "${d.id}" — server returned elements:`, elDigest(design.elements));
       if (!design.elements) design = newDesign();
       if (design.rotate == null) design.rotate = 0;
       $("#design-name").value = design.name || "";
@@ -400,6 +434,7 @@ $("#btn-load-design").onclick = async () => {
       selected = design.elements.length ? 0 : null;
       syncRotateLabel();
       $("#modal").classList.add("hidden"); renderEditor();
+      dlog(`LOAD applied — design.elements now:`, elDigest(design.elements));
     };
     li.querySelector("[data-del]").onclick = async () => { await api.del("/api/designs/" + d.id); li.remove(); };
     ul.appendChild(li);
@@ -592,6 +627,7 @@ function fmtTime(iso) {
 }
 function toHex(c) {
   if (!c) return "#000000";
+  c = String(c);                       // guard: callers sometimes pass non-strings
   if (c[0] === "#") return c;
   const named = { white: "#ffffff", black: "#000000", red: "#ff0000", green: "#008000", blue: "#0000ff", yellow: "#ffff00" };
   return named[c.toLowerCase()] || "#000000";
