@@ -5,11 +5,23 @@ A program to print labels **directly** to a Brother **VC-500W** ZINK full-color 
 the LAN, replacing Brother's clunky official software. This is a subproject of the `D:\hw` home
 network workspace.
 
-**Current state (v0.2.0):** working CLI **and** a Flask web label designer. The verified core
-(`protocol`/`render`/`compose`/`status`/`config`) prints to our firmware; the web app
-(`src/labler/web/`) is a 5-tab UI (Print/Edit/Device/Settings/About) over it. Run with
-`uv run labler-web` → http://localhost:5000. See `specs/flask-app.md` for the design and
-`README.md` for the printer/protocol background.
+**Current state (v0.7.0):** working CLI **and** a Flask web label designer, both printing to our
+firmware (status read + print write verified on hardware). The verified core
+(`protocol`/`render`/`compose`/`status`/`config`) is shared by both. The web app
+(`src/labler/web/`) is a **6-tab** UI — **Print / Edit / Device / History / Settings / About** — over
+a display-list editor. Run with `uv run labler-web` (or `run.bat`) → http://localhost:5000. See
+`specs/flask-app.md` for the design and `README.md` for the printer/protocol background.
+
+Editor capabilities (Edit tab): stacked display-list of **text / image / border** elements; drag to
+move, corner-handle resize, **click an element on the canvas to select it**; whole-label rotate
+(0/90/180/270) to flip a long design across the tape; **color preset swatches** (standard 8 + greys +
+user-customizable presets saved in Settings); **bold / italic** per text element via font *families*;
+live "print preview" that is byte-identical to what feeds out (preview == print). Saved designs live
+under `~/.labler/designs/<id>/`; every print is logged to History with a thumbnail and hardware
+tape-used stats.
+
+CLI surface (`labler ...`): `status`, `print-image`, `print-text`, `print-qr` (rich/rich-argparse,
+short flags). Web entry point `labler-web`; CLI entry point `labler`.
 
 ### Web app runtime data (code/runtime split)
 - **Code** lives in this repo. **Runtime data** lives under `~/.labler/` (Windows
@@ -22,6 +34,20 @@ network workspace.
   resolved to IPv6 this session and refused :9100).
 - Printer access is serialized with a module-level lock (VC-500W = one :9100 connection at a time),
   so two browser tabs can't collide. The print path is the same verified `protocol.print_jpeg`.
+- `settings.json` includes `custom_colors` (user-added swatch presets) alongside host/media/mode/cut/
+  font/background/units. Settings are the app authority and persist server-side.
+
+### Fonts (bold / italic)
+- Text style is modelled as a **font family + bold/italic flags**, NOT raw `.ttf` filenames.
+  `render.FONT_FAMILIES` maps each family (Arial, Times New Roman, Courier New, Verdana, Calibri,
+  Segoe UI, Comic Sans MS, DejaVu Sans) to its regular/bold/italic/bold-italic files.
+- `render._load_font(font, size, bold=, italic=)` resolves family+style to the actual file, with
+  **graceful degradation** (bold-italic → bold → italic → regular) and a cross-platform fallback
+  (DejaVu / Arial). Raw filenames still load for back-compat.
+- `/api/fonts` returns `[{name, has_bold, has_italic}]` families plus a `legacy` map
+  (`file → {family, bold, italic}`). The UI disables a B/I toggle when the family lacks that face,
+  and migrates old designs/settings that stored a raw `.ttf` name to family + inferred flags
+  (`migrateFonts`/`normalizeFont` in `app.js`).
 
 ## The printer in one paragraph
 ZINK (Zero-Ink) **full-color** printer — *not* a QL-/PT-series monochrome thermal unit. 313 DPI
@@ -130,15 +156,54 @@ MIT.
 - Add a top-level `LICENSE` (MIT) when code lands.
 
 ## Git
-- Parent `D:\hw` is already a git repo (`origin` set, branch `main`).
-- **TODO:** decide whether this subproject is committed into the `D:\hw` repo or split into its own
-  repo with its own remote. Confirm with the user before `git init`-ing a separate repo here.
-- Track `CLAUDE.md`, `README.md`, `specs/`, `docs/`, `tests/`, `tools/`. Add `.gitignore` for
-  `.venv/`, `__pycache__/` once Python code lands.
+- **This subproject has its OWN dedicated remote**, separate from the parent `D:\hw` repo:
+  `origin → https://github.com/MikeWise2718/labeler-vc500w.git` (branch `main`).
+- **Push by default after every commit** unless told otherwise (standing user preference).
+- Bump `__version__` (in `src/labler/__init__.py` AND `pyproject.toml`) on every code change — the
+  web header shows the live build, which makes "is my browser seeing the new code?" answerable in two
+  seconds. (See the stale-JS lesson below — the header version comes from `/api/ping`, NOT from the
+  served `app.js`, so a matching header does NOT prove the JS is fresh.)
+- Tracked: `CLAUDE.md`, `README.md`, `specs/`, `docs/`, `tests/`, `tools/`, `run.bat`. `.gitignore`
+  excludes `.venv/`, `__pycache__/`, `misc/` (scratch test images — see lesson below).
 
-## Next steps when building starts
-1. Confirm printer IP/hostname on the LAN; capture a print job from the official app to verify the
-   XML/JPEG protocol against *our* firmware (versions vary).
-2. Decide: fork `sgrimee/labelprinter-vc500w` vs. fresh `uv`/`rich` implementation.
-3. Write `specs/cli-design.md` with the command surface (`print-text`, `print-image`, `print-qr`,
-   `status`) before coding.
+## Lessons learned (web app)
+Hard-won, to stop re-paying for them:
+
+1. **`<autofit>0</autofit>` + real JPEG width/height — never revert.** With autofit=1 the firmware
+   rescales/reorients a landscape label down the tape and eats far more length than designed (a
+   "0.7 cm" design ate 10.6 cm). Confirmed on hardware. Full detail in the GOTCHA above and the
+   `autofit-off` memory.
+
+2. **Preview must BE the print render, not a separate view.** Every "said short, printed long"
+   misprint traced to the preview diverging from the actual JPEG (compounding view-rotations, or
+   autofit). The Edit/Print previews now call the SAME `compose.render_display_list` the printer gets
+   (just PNG vs JPEG). No separate "tape view" rotation. See the `preview-equals-print` memory.
+
+3. **Tape-used = hardware truth (remain before/after delta), not a pixel estimate.** The pixel
+   estimate is unreliable (autofit). Read `<remain>` right before and after each print; the delta is
+   authoritative. Old history entries that predate this only have the bad estimate — we HIDE it
+   rather than mislead.
+
+4. **A thrown exception in `renderProps()` silently kills the canvas render** → browser shows a
+   broken-image icon (v0.6.0–0.6.2 bug). Root cause: `wireSwatches` ran EVERY element property
+   through `toHex()`, and `toHex(56)` called `.toLowerCase()` on a number → `TypeError`; that
+   propagated out of `renderEditor()` before `scheduleRender()` ran, so the `<img>` never got a src.
+   **Lessons:** (a) `renderEditor()` order is `renderElementList → renderProps → scheduleRender` — if
+   props throws, the canvas dies; keep prop-building total. (b) `toHex` is now hardened with
+   `String(c)`. (c) **A broken-image-icon canvas almost always means a JS exception aborted the render
+   path, NOT a server/render bug** — check the browser console first.
+
+5. **Don't chase a "stale cache" ghost — read the diff.** I spent several turns insisting the
+   broken-image was a stale-JS / hard-refresh / reboot problem; it was a real bug I'd introduced. The
+   header showing the new version (`/api/ping`) does NOT prove the served `app.js` is new. When a
+   regression appears right after a change, `git diff <last-good>..HEAD` on the changed file first.
+
+6. **Verify JS-side behavior with a real check, not reasoning.** The Python test suite never
+   exercises the browser JS, so JS bugs (like #4) sail through green tests. `node --check app.js`
+   catches syntax; for logic, reproduce the suspect call in `node -e '...'` (that's how the `toHex(56)`
+   crash was pinned). There's opt-in editor debug logging in `app.js` (off by default; enable with
+   `localStorage.setItem('labler_debug','1')`) that traces element positions through add/move/save/load.
+
+7. **Server access log is colorized + tagged `labler`** (a `WSGIRequestHandler` subclass via rich).
+   Polling routes (`/api/status`, `/api/ping`) are dimmed so real traffic stands out. If you don't
+   recognize which app is logging to a terminal, that prefix is the tell.

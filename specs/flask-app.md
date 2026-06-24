@@ -143,6 +143,27 @@ Version in top-left header (`v{{ version }}` from `__version__`). Mobile-respons
 41 tests pass (`uv run pytest`). The print path is the verified `protocol.print_jpeg`;
 the web layer serializes printer access with a module-level lock.
 
+**v0.7.0 — Bold + italic text.** Text style is now a font **family** + bold/italic flags, not
+raw `.ttf` filenames. `render.FONT_FAMILIES` maps families → regular/bold/italic/bold-italic
+files; `render._load_font(..., bold=, italic=)` resolves with graceful degradation. `/api/fonts`
+returns `[{name, has_bold, has_italic}]` + a `legacy` migration map. Edit tab shows B/I toggle
+buttons (disabled when the family lacks that face); old designs/settings storing raw filenames are
+migrated on load. 60 tests pass.
+
+**v0.6.x — Edit-tab polish + the broken-image bug.** v0.6.0: color preset swatches (standard +
+user-customizable, saved as `settings.custom_colors`), click-an-element-on-canvas to select, and a
+50%-bigger print preview. v0.6.1: stagger new elements so they don't pile up at y=8. **v0.6.3 fixed
+a regression** where the edit canvas showed a broken-image icon: `wireSwatches` fed every element
+property through `toHex()`, and `toHex(56)` threw (`.toLowerCase` on a number), aborting
+`renderProps()` before the canvas render ran. Fix: sync only color keys; harden `toHex` with
+`String()`. (See CLAUDE.md → Lessons learned.)
+
+**v0.5.x — autofit fix (hardware-confirmed) + colorized server log.** v0.5.0: print XML sends
+`<autofit>0</autofit>` with the JPEG's real width/height so landscape labels print 1:1 instead of
+blowing up down the tape; tape-used now read from the hardware `remain` before/after delta
+(**confirmed on hardware: 3.4 cm matched a ruler**). v0.5.1 hides the unreliable pixel estimate on
+old history entries. v0.5.2: colorized, `labler`-tagged Werkzeug access log.
+
 **v0.4.0 — History as its own tab, with thumbnails.** Moved Print history out of About
 into a dedicated **History** tab. Each entry now shows: a thumbnail of what printed,
 name, timestamp, an orientation badge (portrait/landscape), the tape width, and the
@@ -171,14 +192,14 @@ a label will consume and flip it to minimize that:
 
 ## Conventions checklist (workspace Flask rules)
 
-- [ ] Version in header from `__version__`; bump on every code change
-- [ ] `GET /api/ping` with the 4 standard fields
-- [ ] Every UI action hits `/api/...` returning JSON (no form POSTs)
-- [ ] Runtime data under `~/.labler/`, documented in CLAUDE.md
-- [ ] Structured JSONL event log at `~/.labler/logs/events.jsonl`
-- [ ] Settings persisted server-side via `/api/settings`
-- [ ] (No login flow planned — LAN-only personal app — so Remember-me N/A)
-- [ ] No build step; mobile-responsive from the start
+- [x] Version in header from `__version__`; bump on every code change
+- [x] `GET /api/ping` with the 4 standard fields
+- [x] Every UI action hits `/api/...` returning JSON (no form POSTs)
+- [x] Runtime data under `~/.labler/`, documented in CLAUDE.md
+- [x] Structured JSONL event log at `~/.labler/logs/events.jsonl`
+- [x] Settings persisted server-side via `/api/settings`
+- [x] (No login flow planned — LAN-only personal app — so Remember-me N/A)
+- [x] No build step; mobile-responsive from the start
 
 ## Notes / risks
 
@@ -188,6 +209,5 @@ a label will consume and flip it to minimize that:
   handled inside `print_jpeg`.
 - **Preview re-render cost**: each edit POSTs + re-renders with Pillow. Debounce on
   the client; renders are tens of ms for these small images, fine.
-- **Host default**: `config.DEFAULT_HOST` is the mDNS name which resolved to IPv6
-  and refused :9100 this session. The web Settings default should be the IPv4
-  `192.168.25.219` (or we force IPv4 in `_connect`). Decide in Phase 2.
+- **Host default** *(decided)*: the web Settings default is the IPv4 `192.168.25.219`
+  (`runtime.FALLBACK_HOST`), because the mDNS name resolved to IPv6 and refused :9100.

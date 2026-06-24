@@ -4,9 +4,36 @@ A program to print labels **directly** to a Brother **VC-500W** ZINK (Zero-Ink) 
 label printer over the network — bypassing Brother's official desktop/mobile software, which is
 clunky and gets in the way for quick, scriptable label printing.
 
-> **Status:** Research / scaffolding phase. This repo currently documents the printer's protocol
-> and the prior art that exists, so we can build (or fork) a clean CLI tool. No application code
-> yet — see [Roadmap](#roadmap).
+> **Status:** Working (v0.7.0). A `rich` CLI **and** a Flask web label designer, both printing to our
+> VC-500W over the LAN. The full wire protocol (status read + print write) is verified against our
+> firmware on hardware. MIT-licensed, built from scratch — see [License](#license).
+
+---
+
+## Quick start
+
+```bash
+uv sync                      # install (Python ≥ 3.10)
+
+# CLI
+uv run labler status                         # query the printer
+uv run labler print-text "Hello" -mw 25      # print text on 25 mm tape
+uv run labler print-image logo.png -mw 25
+uv run labler print-qr "https://example.com"
+
+# Web label designer (6-tab UI)
+uv run labler-web            # or run.bat   →  http://localhost:5000
+```
+
+The web app is the richer surface: a display-list editor (text / image / border elements), drag &
+resize, click-to-select on the canvas, whole-label rotate, color preset swatches, **bold/italic**
+text, a live preview that is byte-identical to what feeds out of the printer, saved designs, and a
+print History with thumbnails and real hardware tape-used stats.
+
+**Code vs. runtime split:** code lives in this repo; all mutable state lives under `~/.labler/`
+(Windows `%USERPROFILE%\.labler\`) — `settings.json`, `logs/events.jsonl`, uploaded `assets/`, saved
+`designs/<id>/`, `history.jsonl` + per-print thumbnails. `.venv` rebuilds and re-clones never lose
+state. The web app's settings are separate from the CLI's `~/.config/labler/config.json`.
 
 ---
 
@@ -107,19 +134,30 @@ protocol is trivial (XML + JPEG to a TCP port), a small CLI gives us:
 
 ---
 
-## Roadmap
+## Project layout
 
-The likely path is **fork or vendor `sgrimee/labelprinter-vc500w`** and adapt it to this
-workspace's conventions (`uv`, `rich` CLI, host config pointing at our LAN), rather than
-re-implementing the protocol. Decisions still open:
+```
+src/labler/
+  protocol.py     raw XML+JPEG over :9100 — lock/print/status (the verified wire core)
+  render.py       image/text/QR → print-ready JPEG; font families + bold/italic resolver
+  compose.py      display-list compositor (stack text/image/border, rotate, measure)
+  status.py       parse the status.xml reply
+  config.py       media table (widths → px), host defaults
+  cli.py          `labler` CLI (status / print-image / print-text / print-qr)
+  web/
+    app.py        Flask factory + JSON API (/api/render, /print, /designs, /history, /fonts, …)
+    runtime.py    ~/.labler/ layout, WebSettings, JSONL event log
+    static/, templates/   vanilla-JS SPA + dark theme (no build step)
+tests/            pytest (protocol / render / compose / web / status) — 60 tests
+specs/            design docs (flask-app.md, design.md, tasks.md)
+docs/             LED indications, vendor PDFs
+```
 
-- [ ] Fork vs. fresh implementation (AGPLv3 is copyleft — affects how we license/redistribute).
-- [ ] Confirm the printer's IP/hostname on the `192.168.25.0/24` LAN and add it to config.
-- [ ] Verify wire protocol against *our* unit with a capture (firmware versions can differ).
-- [ ] Target media width(s) we actually own.
-- [ ] CLI surface: `print-text`, `print-image`, `print-qr`, `status`.
-
-See `CLAUDE.md` for working conventions and `specs/` for any design docs once we start building.
+The wire protocol was **built from scratch** and verified against our own firmware (decided against
+forking the AGPLv3 prior art — see [License](#license)). Roadmap items from the research phase
+(confirm IP, verify protocol on our unit, pick media widths, define the CLI surface, build the web
+UI) are all **done**. See `CLAUDE.md` for working conventions and hard-won lessons, and `specs/` for
+design docs.
 
 ---
 
@@ -129,5 +167,6 @@ See `CLAUDE.md` for working conventions and `specs/` for any design docs once we
 AGPLv3 projects ([sgrimee/labelprinter-vc500w](https://github.com/sgrimee/labelprinter-vc500w),
 [m7i.org labelprinter](https://m7i.org/projects/labelprinter-linux-python-for-vc-500w/)). We learned
 the wire protocol from their write-ups and verified it independently against our own printer; no code
-is copied from them, so their AGPLv3 does not apply. MIT keeps the project (and anything built on top
-of it, including the planned Flask web UI) free of copyleft obligations.
+is copied from them, so their AGPLv3 does not apply. MIT keeps the project (and everything built on
+top of it, including the Flask web UI — AGPL would otherwise be viral over the network) free of
+copyleft obligations.
