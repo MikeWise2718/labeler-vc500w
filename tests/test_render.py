@@ -68,3 +68,47 @@ def test_bad_rotate_raises():
     src = Image.new("RGB", (10, 10), "white")
     with pytest.raises(ValueError):
         render.render_image(src, media_mm=25, rotate=45)
+
+
+# ---- font family + bold/italic resolution -----------------------------------
+
+def _font_path(fnt):
+    # FreeTypeFont has .path; the bitmap fallback (load_default) does not.
+    return getattr(fnt, "path", None)
+
+
+def test_load_font_never_crashes_on_non_string():
+    # Regression guard: callers must be able to pass odd values without an
+    # exception (the editor once fed numeric props through the color path).
+    assert render._load_font(None, 16) is not None
+    assert render._load_font("does-not-exist.ttf", 16) is not None
+
+
+def test_font_family_bold_italic_pick_distinct_files():
+    # On a box with Arial installed, each style maps to a different file. If Arial
+    # isn't present, skip — the resolver still degrades gracefully.
+    fam = render.FONT_FAMILIES["Arial"]
+    reg = render._try_truetype(fam["r"], 16)
+    if reg is None:
+        pytest.skip("Arial not installed on this host")
+    paths = {
+        (b, i): _font_path(render._load_font("Arial", 24, bold=b, italic=i))
+        for b in (False, True) for i in (False, True)
+    }
+    # All four faces resolve to distinct files when the family is fully installed.
+    assert len(set(paths.values())) == 4
+
+
+def test_font_resolver_degrades_when_style_missing():
+    # DejaVu Sans is the cross-platform fallback family; even if its exact files
+    # aren't present, asking for bold/italic must still return *some* usable font.
+    f = render._load_font("DejaVu Sans", 20, bold=True, italic=True)
+    assert f is not None
+
+
+def test_legacy_file_to_family_reverse_map():
+    m = render.FONT_FILE_TO_FAMILY
+    assert m["arial.ttf"] == {"family": "Arial", "bold": False, "italic": False}
+    assert m["arialbd.ttf"] == {"family": "Arial", "bold": True, "italic": False}
+    assert m["ariali.ttf"] == {"family": "Arial", "bold": False, "italic": True}
+    assert m["arialbi.ttf"] == {"family": "Arial", "bold": True, "italic": True}

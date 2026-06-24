@@ -352,7 +352,8 @@ def create_app() -> Flask:
     # ---- fonts -----------------------------------------------------------------
     @app.get("/api/fonts")
     def api_fonts():
-        return jsonify(fonts=_available_fonts())
+        from ..render import FONT_FILE_TO_FAMILY
+        return jsonify(fonts=_available_fonts(), legacy=FONT_FILE_TO_FAMILY)
 
     # ---- about -----------------------------------------------------------------
     @app.get("/api/about")
@@ -398,22 +399,37 @@ def _resolve_assets(dl: dict) -> dict:
     return dl
 
 
-def _available_fonts() -> list[str]:
-    """A small curated list of common fonts the server can actually load."""
-    candidates = [
-        "arial.ttf", "arialbd.ttf", "times.ttf", "cour.ttf", "verdana.ttf",
-        "calibri.ttf", "segoeui.ttf", "DejaVuSans.ttf", "comic.ttf",
-        "msyh.ttc", "simsun.ttc", "malgun.ttf", "YuGothR.ttc",  # CJK (deferred feature)
-    ]
-    out = []
+def _available_fonts() -> list[dict]:
+    """Font FAMILIES the server can load, each with which styles are available.
+
+    Returns [{name, has_bold, has_italic}, ...] for every family in
+    render.FONT_FAMILIES whose regular file loads. The UI shows the family name
+    and enables Bold/Italic toggles per `has_*`. Bold/italic resolution happens
+    server-side in render._load_font(family, bold=, italic=).
+    """
     from PIL import ImageFont
-    for name in candidates:
+
+    from ..render import FONT_FAMILIES
+
+    def loads(name: str | None) -> bool:
+        if not name:
+            return False
         try:
             ImageFont.truetype(name, 16)
-            out.append(name)
+            return True
         except OSError:
-            continue
-    return out or ["(default)"]
+            return False
+
+    out = []
+    for fam, files in FONT_FAMILIES.items():
+        if not loads(files.get("r")):
+            continue  # family's regular face isn't installed -> skip the family
+        out.append({
+            "name": fam,
+            "has_bold": loads(files.get("b")) or loads(files.get("bi")),
+            "has_italic": loads(files.get("i")) or loads(files.get("bi")),
+        })
+    return out or [{"name": "(default)", "has_bold": False, "has_italic": False}]
 
 
 def _free_memory() -> str:

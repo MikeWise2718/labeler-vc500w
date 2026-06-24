@@ -85,16 +85,93 @@ def render_image(
     return _encode_jpeg(img, no_subsampling=no_subsampling)
 
 
-def _load_font(font: str | None, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    candidates = [font] if font else []
-    candidates += ["arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"]
-    for name in candidates:
-        if not name:
-            continue
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
+# Font families mapped to their (regular, bold, italic, bold-italic) files. Lets the
+# UI offer a family name + Bold/Italic toggles instead of raw .ttf filenames. Files
+# that don't exist on a given box are skipped at resolve time, with graceful fallback
+# (e.g. DejaVu has bold/italic/bold-oblique under different names; cross-platform).
+FONT_FAMILIES: dict[str, dict[str, str]] = {
+    # name:           regular            bold               italic             bold-italic
+    "Arial":          {"r": "arial.ttf",    "b": "arialbd.ttf",  "i": "ariali.ttf",   "bi": "arialbi.ttf"},
+    "Times New Roman":{"r": "times.ttf",    "b": "timesbd.ttf",  "i": "timesi.ttf",   "bi": "timesbi.ttf"},
+    "Courier New":    {"r": "cour.ttf",     "b": "courbd.ttf",   "i": "couri.ttf",    "bi": "courbi.ttf"},
+    "Verdana":        {"r": "verdana.ttf",  "b": "verdanab.ttf", "i": "verdanai.ttf", "bi": "verdanaz.ttf"},
+    "Calibri":        {"r": "calibri.ttf",  "b": "calibrib.ttf", "i": "calibrii.ttf", "bi": "calibriz.ttf"},
+    "Segoe UI":       {"r": "segoeui.ttf",  "b": "segoeuib.ttf", "i": "segoeuii.ttf", "bi": "segoeuiz.ttf"},
+    "Comic Sans MS":  {"r": "comic.ttf",    "b": "comicbd.ttf",  "i": "comici.ttf",   "bi": "comicz.ttf"},
+    # cross-platform fallback family (Linux/macOS): DejaVu ships these names
+    "DejaVu Sans":    {"r": "DejaVuSans.ttf", "b": "DejaVuSans-Bold.ttf",
+                       "i": "DejaVuSans-Oblique.ttf", "bi": "DejaVuSans-BoldOblique.ttf"},
+}
+
+
+# Reverse map: any style file -> {family, bold, italic}. Lets the UI migrate
+# designs/settings that stored a raw filename (e.g. "arialbd.ttf") back to the
+# family + style flags ("Arial", bold=true).
+_STYLE_FLAGS = {"r": (False, False), "b": (True, False), "i": (False, True), "bi": (True, True)}
+FONT_FILE_TO_FAMILY: dict[str, dict] = {
+    fname: {"family": fam, "bold": _STYLE_FLAGS[style][0], "italic": _STYLE_FLAGS[style][1]}
+    for fam, files in FONT_FAMILIES.items()
+    for style, fname in files.items()
+}
+
+
+def _try_truetype(name: str | None, size: int):
+    if not name:
+        return None
+    try:
+        return ImageFont.truetype(name, size)
+    except OSError:
+        return None
+
+
+def _load_font(
+    font: str | None,
+    size: int,
+    *,
+    bold: bool = False,
+    italic: bool = False,
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Resolve a font to a PIL font object, honoring bold/italic.
+
+    `font` may be a family name from FONT_FAMILIES (e.g. "Arial") or a raw .ttf
+    filename (back-compat). When it's a known family and bold/italic are set, the
+    matching style file is loaded; if that exact style is missing, we degrade
+    gracefully (bold-italic -> bold -> italic -> regular) rather than fail. Raw
+    filenames are tried as-is first.
+    """
+    style = ("bi" if bold and italic else "b" if bold else "i" if italic else "r")
+
+    # Known family -> pick the style file, with graceful degradation.
+    fam = FONT_FAMILIES.get(font) if font else None
+    if fam:
+        # preference order so a missing exact style still gets *some* emphasis
+        order = {
+            "bi": ["bi", "b", "i", "r"],
+            "b": ["b", "bi", "r"],
+            "i": ["i", "bi", "r"],
+            "r": ["r"],
+        }[style]
+        for s in order:
+            f = _try_truetype(fam.get(s), size)
+            if f:
+                return f
+
+    # Raw filename (or unknown family string): try it directly first.
+    f = _try_truetype(font, size)
+    if f:
+        return f
+
+    # Last-ditch generic fallbacks, honoring style where the file names are known.
+    generic = {
+        "bi": ["arialbi.ttf", "DejaVuSans-BoldOblique.ttf"],
+        "b": ["arialbd.ttf", "DejaVuSans-Bold.ttf"],
+        "i": ["ariali.ttf", "DejaVuSans-Oblique.ttf"],
+        "r": [],
+    }[style]
+    for name in generic + ["arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"]:
+        f = _try_truetype(name, size)
+        if f:
+            return f
     return ImageFont.load_default()
 
 

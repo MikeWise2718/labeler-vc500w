@@ -84,7 +84,7 @@ function addElement(type) {
   const y0 = nextFreeY();
   let el;
   if (type === "image") el = { type, x: 0, y: y0, w, h: 200, rotate: 0, z, src_id: null, fit: "contain" };
-  else if (type === "text") el = { type, x: 8, y: y0, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || null, font_size: 56, color: "black", align: "center" };
+  else if (type === "text") el = { type, x: 8, y: y0, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || null, font_size: 56, color: "black", align: "center", bold: false, italic: false };
   else if (type === "border") el = { type, z: 99, color: "black", thickness: 4 };
   design.elements.push(el);
   selected = design.elements.length - 1;
@@ -164,6 +164,13 @@ function renderProps() {
   if (el.type === "text") {
     h += `<label>Text<input data-k="text" value="${escapeAttr(el.text)}"></label>`;
     h += `<label>Font<select data-k="font" id="prop-font"></select></label>`;
+    const bOn = fontHas(el.font, "bold"), iOn = fontHas(el.font, "italic");
+    h += `<div class="style-toggles" id="prop-style">
+      <button type="button" class="style-btn${el.bold ? " on" : ""}" data-flag="bold"
+        ${bOn ? "" : "disabled title='This font has no bold face'"} style="font-weight:bold">B</button>
+      <button type="button" class="style-btn${el.italic ? " on" : ""}" data-flag="italic"
+        ${iOn ? "" : "disabled title='This font has no italic face'"} style="font-style:italic">I</button>
+    </div>`;
     h += num("font_size", "Size", 4);
     h += colorField("color", "Color", el.color);
     h += `<label>Align<select data-k="align"><option ${el.align==="left"?"selected":""}>left</option><option ${el.align==="center"?"selected":""}>center</option><option ${el.align==="right"?"selected":""}>right</option></select></label>`;
@@ -184,6 +191,21 @@ function renderProps() {
     el[inp.dataset.k] = v;
     if (inp.dataset.k === "color") syncSwatches(inp.dataset.k, v);
     if (inp.dataset.k === "text") renderElementList();
+    // Changing the font can change which styles exist -> rebuild props so the
+    // Bold/Italic toggles enable/disable correctly. Clear flags the new font lacks.
+    if (inp.dataset.k === "font") {
+      if (el.bold && !fontHas(v, "bold")) el.bold = false;
+      if (el.italic && !fontHas(v, "italic")) el.italic = false;
+      renderProps();
+    }
+    scheduleRender();
+  });
+  // Bold / Italic toggle buttons.
+  p.querySelectorAll("[data-flag]").forEach(btn => btn.onclick = () => {
+    if (btn.disabled) return;
+    const flag = btn.dataset.flag;
+    el[flag] = !el[flag];
+    btn.classList.toggle("on", el[flag]);
     scheduleRender();
   });
   wireSwatches(p, el);
@@ -428,6 +450,7 @@ $("#btn-load-design").onclick = async () => {
       design = await api.json("/api/designs/" + d.id);
       dlog(`LOAD "${d.id}" — server returned elements:`, elDigest(design.elements));
       if (!design.elements) design = newDesign();
+      migrateFonts(design);
       if (design.rotate == null) design.rotate = 0;
       $("#design-name").value = design.name || "";
       $("#edit-media").value = design.media_mm; $("#edit-length").value = design.length_px;
@@ -549,14 +572,46 @@ $("#btn-save-settings").onclick = async () => {
 };
 
 async function loadFonts() {
-  const { fonts } = await api.json("/api/fonts");
+  const { fonts, legacy } = await api.json("/api/fonts");
+  // fonts: [{name, has_bold, has_italic}]. Keep a name->meta map for the toggles.
   window.__fonts = fonts;
-  fillFontSelect($("#set-font"), settingsCache.font);
+  window.__fontMeta = Object.fromEntries(fonts.map(f => [f.name, f]));
+  window.__fontLegacy = legacy || {};   // raw "arial.ttf" -> family "Arial"
+  fillFontSelect($("#set-font"), normalizeFont(settingsCache.font));
+}
+// Map a stored font value (possibly a legacy .ttf filename) to a family name.
+// __fontLegacy[file] = {family, bold, italic}.
+function normalizeFont(font) {
+  if (!font) return font;
+  const m = (window.__fontLegacy || {})[font];
+  return m ? m.family : font;
+}
+// Rewrite legacy .ttf font names on every text element of a loaded design so the
+// family dropdown + Bold/Italic toggles line up. Older designs that stored e.g.
+// "arialbd.ttf" become {font:"Arial", bold:true}. The bold/italic implied by the
+// filename is OR-ed into any flags already present.
+function migrateFonts(dl) {
+  const legacy = window.__fontLegacy || {};
+  (dl.elements || []).forEach(el => {
+    if (el.type !== "text" || !el.font) return;
+    const m = legacy[el.font];
+    if (m) {
+      el.font = m.family;
+      el.bold = !!el.bold || m.bold;
+      el.italic = !!el.italic || m.italic;
+    }
+  });
 }
 function fillFontSelect(sel, current) {
   if (!sel) return;
   const fonts = window.__fonts || [];
-  sel.innerHTML = `<option value="">(default)</option>` + fonts.map(f => `<option ${f === current ? "selected" : ""}>${f}</option>`).join("");
+  sel.innerHTML = `<option value="">(default)</option>` +
+    fonts.map(f => `<option ${f.name === current ? "selected" : ""}>${f.name}</option>`).join("");
+}
+// Whether a family supports a given style (default font has neither).
+function fontHas(name, style) {
+  const m = (window.__fontMeta || {})[name];
+  return m ? (style === "bold" ? m.has_bold : m.has_italic) : false;
 }
 
 // ============================ ABOUT / HISTORY ==============================
@@ -600,6 +655,7 @@ async function loadHistory() {
 function loadDesignIntoEditor(dl) {
   if (!dl) return;
   design = { ...newDesign(), ...dl };
+  migrateFonts(design);
   if (design.rotate == null) design.rotate = 0;
   selected = design.elements?.length ? 0 : null;
   $("#design-name").value = design.name || "";

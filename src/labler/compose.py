@@ -91,7 +91,8 @@ def _render_text_element(canvas: Image.Image, el: dict) -> None:
     if not text:
         return
     size = int(el.get("font_size", 48))
-    fnt = _load_font(el.get("font"), size)
+    fnt = _load_font(el.get("font"), size,
+                     bold=bool(el.get("bold")), italic=bool(el.get("italic")))
     color = el.get("color", "black")
     align = el.get("align", "left")
     box_w = int(el.get("w", canvas.width))

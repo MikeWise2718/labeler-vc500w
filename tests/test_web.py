@@ -45,6 +45,32 @@ def test_render_returns_png(client):
     Image.open(io.BytesIO(r.data))  # decodable
 
 
+def test_fonts_endpoint_shape(client):
+    r = client.get("/api/fonts").get_json()
+    assert isinstance(r["fonts"], list) and r["fonts"]
+    f = r["fonts"][0]
+    assert {"name", "has_bold", "has_italic"} <= set(f)
+    # legacy map lets the UI migrate raw .ttf font values to families
+    assert isinstance(r["legacy"], dict)
+
+
+def test_render_honors_bold_italic(client):
+    base = {"type": "text", "x": 0, "y": 0, "w": 312, "h": 100,
+            "text": "Abc", "font": "Arial", "font_size": 56, "color": "black"}
+    def png(bold, italic):
+        dl = {"media_mm": 25, "length_px": 120,
+              "elements": [{**base, "bold": bold, "italic": italic}]}
+        rv = client.post("/api/render", json=dl)
+        assert rv.status_code == 200
+        return rv.data
+    plain = png(False, False)
+    bold = png(True, False)
+    # Bold changes the rendered glyphs -> different bytes (skip if Arial absent).
+    from labler import render
+    if render._try_truetype("arialbd.ttf", 16) is not None:
+        assert bold != plain
+
+
 def test_render_image_without_source_is_ok_not_500(client):
     # Regression: adding an image element before picking a file used to KeyError -> 500.
     dl = {"media_mm": 25, "length_px": 100, "elements": [

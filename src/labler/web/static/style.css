@@ -117,6 +117,16 @@ label select, label input { margin-top: 3px; }
 }
 .props .form, .props label { font-size: .88rem; }
 
+/* Bold / Italic toggle buttons in the text props */
+.style-toggles { display: flex; gap: 6px; margin: 8px 0; }
+.style-btn {
+  width: 34px; height: 30px; padding: 0; font-size: 1rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.style-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.style-btn:disabled { opacity: .35; cursor: not-allowed; }
+.style-btn:disabled:hover { border-color: var(--line); }
+
 /* color preset swatches */
 .swatches { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .swatch {
