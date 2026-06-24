@@ -503,15 +503,97 @@ def _history_summary() -> tuple[int, str | None]:
     return len(items), (items[0]["timestamp"] if items else None)
 
 
+class _LablerRequestHandler:
+    """Mixin for werkzeug's WSGIRequestHandler: colorized, labler-tagged access log.
+
+    Replaces the plain ``192.168.25.5 - - [..] "GET /api/status" 200 -`` lines with a
+    colored line prefixed by ``labler`` so it's obvious which app is talking. Status
+    code is colored by class (2xx green, 3xx cyan, 4xx yellow, 5xx red); method and
+    path are dimmed for the noisy polling routes (/api/status, /api/ping).
+    """
+
+    # quiet routes that poll constantly — dim them so real traffic stands out
+    _QUIET = ("/api/status", "/api/ping")
+
+    def log_request(self, code="-", size="-"):  # noqa: D401 (werkzeug signature)
+        from rich.console import Console
+
+        console = getattr(self.__class__, "_console", None)
+        if console is None:
+            console = Console(stderr=True)
+            self.__class__._console = console
+
+        try:
+            code_i = int(code)
+        except (TypeError, ValueError):
+            code_i = 0
+        if code_i >= 500:
+            code_color = "bold red"
+        elif code_i >= 400:
+            code_color = "yellow"
+        elif code_i >= 300:
+            code_color = "cyan"
+        else:
+            code_color = "green"
+
+        line = self.requestline  # e.g. 'GET /api/status HTTP/1.1'
+        path = line.split(" ")[1] if " " in line else line
+        quiet = any(path.startswith(q) for q in self._QUIET)
+        req_style = "dim" if quiet else "white"
+        client = self.address_string()
+
+        console.print(
+            f"[bold magenta]labler[/] "
+            f"[dim]{client}[/] "
+            f"[{req_style}]{line}[/] "
+            f"[{code_color}]{code}[/]"
+        )
+
+    def log(self, type, message, *args):  # noqa: A002 (werkzeug signature)
+        # Route werkzeug's other logs (errors, warnings) through rich too.
+        from rich.console import Console
+
+        console = getattr(self.__class__, "_console", None)
+        if console is None:
+            console = Console(stderr=True)
+            self.__class__._console = console
+        color = "red" if type == "error" else "yellow" if type == "warning" else "dim"
+        console.print(f"[bold magenta]labler[/] [{color}]{message % args}[/]")
+
+
+def _make_request_handler():
+    """Build a WSGIRequestHandler subclass with our colorized logging mixed in."""
+    from werkzeug.serving import WSGIRequestHandler
+
+    class LablerWSGIRequestHandler(_LablerRequestHandler, WSGIRequestHandler):
+        pass
+
+    return LablerWSGIRequestHandler
+
+
 def main() -> None:
     """Entry point: `labler-web`. Runs the dev server on 0.0.0.0:5000."""
     import argparse
+
+    from rich.console import Console
+
     ap = argparse.ArgumentParser(prog="labler-web", description="VC-500W label designer web app")
     ap.add_argument("-p", "--port", type=int, default=5000)
     ap.add_argument("-b", "--bind", default="0.0.0.0")
     ap.add_argument("-d", "--debug", action="store_true")
     args = ap.parse_args()
-    create_app().run(host=args.bind, port=args.port, debug=args.debug)
+
+    console = Console(stderr=True)
+    console.print(
+        f"[bold magenta]labler[/] [green]VC-500W label designer[/] "
+        f"[dim]v{__version__}[/] → [cyan]http://{args.bind}:{args.port}[/]"
+    )
+    create_app().run(
+        host=args.bind,
+        port=args.port,
+        debug=args.debug,
+        request_handler=_make_request_handler(),
+    )
 
 
 if __name__ == "__main__":
