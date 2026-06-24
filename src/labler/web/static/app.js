@@ -63,14 +63,29 @@ async function pollStatus() {
 function addElement(type) {
   const w = design.media_mm === 50 ? 624 : 312;
   const z = design.elements.length;
+  // Start new elements just below whatever's already there, so multiple adds
+  // don't pile up at the same y (which made the canvas not match the list).
+  const y0 = nextFreeY();
   let el;
-  if (type === "image") el = { type, x: 0, y: 0, w, h: 200, rotate: 0, z, src_id: null, fit: "contain" };
-  else if (type === "text") el = { type, x: 8, y: 8, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || null, font_size: 56, color: "black", align: "center" };
+  if (type === "image") el = { type, x: 0, y: y0, w, h: 200, rotate: 0, z, src_id: null, fit: "contain" };
+  else if (type === "text") el = { type, x: 8, y: y0, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || null, font_size: 56, color: "black", align: "center" };
   else if (type === "border") el = { type, z: 99, color: "black", thickness: 4 };
   design.elements.push(el);
   selected = design.elements.length - 1;
   if (type === "image") pickImageFor(el);
   renderEditor();
+}
+
+// Lowest free y on the canvas: bottom edge of the lowest positioned element + a
+// small gap (borders have no y/h, so they're skipped). Keeps stacked adds visible.
+function nextFreeY() {
+  let bottom = 8;
+  for (const el of design.elements) {
+    if (el.type === "border") continue;
+    const b = (el.y || 0) + (el.h || 40);
+    if (b > bottom) bottom = b;
+  }
+  return bottom + 8;
 }
 
 $$("[data-add]").forEach(b => b.addEventListener("click", () => addElement(b.dataset.add)));
