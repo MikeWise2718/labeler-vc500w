@@ -143,6 +143,19 @@ Version in top-left header (`v{{ version }}` from `__version__`). Mobile-respons
 41 tests pass (`uv run pytest`). The print path is the verified `protocol.print_jpeg`;
 the web layer serializes printer access with a module-level lock.
 
+**v0.4.0 — History as its own tab, with thumbnails.** Moved Print history out of About
+into a dedicated **History** tab. Each entry now shows: a thumbnail of what printed,
+name, timestamp, an orientation badge (portrait/landscape), the tape width, and the
+print length (cm + inches). Load reopens the design in the editor; delete removes the
+entry and its thumbnail.
+- On print, `_append_history` saves a thumbnail PNG (`~/.labler/history/<id>.png`) and
+  records `width_px/length_px/length_cm/length_in/orientation` via `measure_display_list`.
+- `GET /api/history` backfills orientation/length for pre-v0.4 entries from their stored
+  `display_list`; `GET /api/history/<id>/thumb.png` serves the saved thumbnail or, for old
+  entries, renders one on the fly. Thumbnails are returned as in-memory bytes (NOT
+  send_file) so a viewed thumbnail's open handle can't block its later delete on Windows.
+- 50 tests pass.
+
 **v0.3.0 — tape view + whole-label rotation.** Added so the user can SEE how much tape
 a label will consume and flip it to minimize that:
 - `compose.py`: `rotate` (0/90/180/270) applied to the whole composed canvas (re-fit to

@@ -30,7 +30,8 @@ $$(".tab").forEach(t => t.addEventListener("click", () => {
   t.classList.add("active");
   $("#tab-" + t.dataset.tab).classList.add("active");
   if (t.dataset.tab === "device") loadDevice();
-  if (t.dataset.tab === "about") { loadAbout(); loadHistory(); }
+  if (t.dataset.tab === "history") loadHistory();
+  if (t.dataset.tab === "about") loadAbout();
   if (t.dataset.tab === "print") renderPrintPreview();
 }));
 
@@ -416,23 +417,50 @@ async function loadHistory() {
   if (!history.length) { ul.innerHTML = `<li class="muted">No prints yet.</li>`; return; }
   history.forEach(h => {
     const li = document.createElement("li");
-    li.innerHTML = `<div class="h-meta"><b>${h.name || "(untitled)"}</b><br>
-      <small>${h.timestamp} · ${h.media_mm}mm · ${h.bytes} B</small></div>
-      <button data-load>Load</button><button data-del>✕</button>`;
-    li.querySelector("[data-load]").onclick = () => {
-      if (h.display_list) { design = { ...newDesign(), ...h.display_list }; selected = design.elements?.length ? 0 : null;
-        $$(".tab").forEach(x => x.classList.remove("active")); $$(".panel").forEach(x => x.classList.remove("active"));
-        $(`.tab[data-tab="edit"]`).classList.add("active"); $("#tab-edit").classList.add("active");
-        $("#edit-media").value = design.media_mm; renderEditor(); }
-    };
+    const len = h.length_cm != null ? `${h.length_cm} cm (${h.length_in}″)` : "?";
+    const orient = h.orientation
+      ? `<span class="badge ${h.orientation}">${h.orientation}</span>` : "";
+    li.innerHTML = `
+      <img class="h-thumb" src="${h.thumb}" alt="" loading="lazy">
+      <div class="h-meta">
+        <b>${escapeHtml(h.name) || "(untitled)"}</b> ${orient}<br>
+        <small>${fmtTime(h.timestamp)} · ${h.media_mm} mm tape · length ${len}</small>
+      </div>
+      <div class="h-actions"><button data-load>Load</button><button data-del>✕</button></div>`;
+    li.querySelector("[data-load]").onclick = () => loadDesignIntoEditor(h.display_list);
     li.querySelector("[data-del]").onclick = async () => { await api.del("/api/history/" + h.id); li.remove(); };
     ul.appendChild(li);
   });
 }
 
+function loadDesignIntoEditor(dl) {
+  if (!dl) return;
+  design = { ...newDesign(), ...dl };
+  if (design.rotate == null) design.rotate = 0;
+  selected = design.elements?.length ? 0 : null;
+  $("#design-name").value = design.name || "";
+  $("#edit-media").value = design.media_mm;
+  $("#edit-length").value = design.length_px;
+  syncRotateLabel();
+  $$(".tab").forEach(x => x.classList.remove("active"));
+  $$(".panel").forEach(x => x.classList.remove("active"));
+  $(`.tab[data-tab="edit"]`).classList.add("active");
+  $("#tab-edit").classList.add("active");
+  renderEditor();
+}
+
 // ---- utils ------------------------------------------------------------------
 function flash(sel, msg) { const e = $(sel); if (e) e.textContent = msg; }
 function escapeAttr(s) { return String(s).replace(/"/g, "&quot;"); }
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString();
+}
 function toHex(c) {
   if (!c) return "#000000";
   if (c[0] === "#") return c;

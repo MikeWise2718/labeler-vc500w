@@ -266,12 +266,53 @@ def create_app() -> Flask:
     # ---- history ---------------------------------------------------------------
     @app.get("/api/history")
     def api_history():
-        return jsonify(history=_read_history())
+        # Backfill orientation/length for entries saved before those fields existed,
+        # using their stored display_list. Cheap; keeps old prints fully shown.
+        items = _read_history()
+        for h in items:
+            if h.get("orientation") is None and h.get("display_list"):
+                try:
+                    d = compose.measure_display_list(_resolve_assets(dict(h["display_list"])))
+                    h.setdefault("length_cm", d["length_cm"])
+                    h.setdefault("length_in", d["length_in"])
+                    h["width_px"] = h.get("width_px") or d["width_px"]
+                    h["length_px"] = h.get("length_px") or d["length_px"]
+                    h["orientation"] = _orientation(d["width_px"], d["length_px"])
+                except Exception:
+                    pass
+            h["thumb"] = f"/api/history/{h['id']}/thumb.png"
+        return jsonify(history=items)
+
+    @app.get("/api/history/<entry>/thumb.png")
+    def api_history_thumb(entry):
+        # Prefer the saved thumbnail; fall back to rendering the stored display_list
+        # for old entries that predate thumbnail saving. Return bytes (not send_file)
+        # so no file handle lingers — on Windows an open handle blocks the later
+        # delete-unlink of the same thumbnail.
+        from flask import Response
+        path = runtime.HISTORY_DIR / f"{Path(entry).name}.png"
+        if path.exists():
+            return Response(path.read_bytes(), mimetype="image/png")
+        for h in _read_history():
+            if h.get("id") == entry and h.get("display_list"):
+                try:
+                    png = compose.render_display_list(
+                        _resolve_assets(dict(h["display_list"])), fmt="PNG")
+                    from flask import Response
+                    return Response(png, mimetype="image/png")
+                except Exception:
+                    break
+        abort(404)
 
     @app.delete("/api/history/<entry>")
     def api_delete_history(entry):
         items = [h for h in _read_history() if h.get("id") != entry]
         _write_history(items)
+        thumb = runtime.HISTORY_DIR / f"{Path(entry).name}.png"
+        try:
+            thumb.unlink(missing_ok=True)
+        except OSError:
+            pass
         log_event("history.delete", "deleted history entry", id=entry)
         return jsonify(ok=True)
 
@@ -390,9 +431,29 @@ def _write_history(items: list[dict]) -> None:
     runtime.HISTORY_FILE.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
+def _orientation(width_px: int, length_px: int) -> str:
+    """Portrait = taller than wide (length > across-tape); landscape = wider."""
+    if length_px > width_px:
+        return "portrait"
+    if length_px < width_px:
+        return "landscape"
+    return "square"
+
+
 def _append_history(body: dict, jpeg: bytes, st) -> str:
     runtime.ensure_runtime()
     entry_id = hashlib.sha1(jpeg + runtime.now_iso().encode()).hexdigest()[:12]
+    dl = {k: v for k, v in body.items() if k != "src"}
+    # Physical size + orientation, measured from the same display-list that printed.
+    try:
+        dims = compose.measure_display_list(_resolve_assets(dict(dl)))
+    except Exception:
+        dims = {}
+    # Save a thumbnail PNG so the History tab can show what was printed.
+    try:
+        (runtime.HISTORY_DIR / f"{entry_id}.png").write_bytes(jpeg)
+    except OSError:
+        pass
     rec = {
         "id": entry_id,
         "timestamp": runtime.now_iso(),
@@ -400,7 +461,12 @@ def _append_history(body: dict, jpeg: bytes, st) -> str:
         "media_mm": body.get("media_mm", 25),
         "bytes": len(jpeg),
         "remain_in": st.remain,
-        "display_list": {k: v for k, v in body.items() if k != "src"},
+        "width_px": dims.get("width_px"),
+        "length_px": dims.get("length_px"),
+        "length_cm": dims.get("length_cm"),
+        "length_in": dims.get("length_in"),
+        "orientation": _orientation(dims.get("width_px", 0), dims.get("length_px", 0)) if dims else None,
+        "display_list": dl,
     }
     with runtime.HISTORY_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(rec, default=str) + "\n")

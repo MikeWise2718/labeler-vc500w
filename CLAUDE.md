@@ -15,7 +15,8 @@ network workspace.
 - **Code** lives in this repo. **Runtime data** lives under `~/.labler/` (Windows
   `%USERPROFILE%\.labler\`), created on first run: `settings.json`, `logs/events.jsonl`,
   `assets/` (uploaded bitmaps), `designs/<id>/` (saved display-lists + previews),
-  `history.jsonl` (print log). `.venv` rebuilds / re-clones never lose this state.
+  `history.jsonl` (print log) + `history/<id>.png` (per-print thumbnails). `.venv`
+  rebuilds / re-clones never lose this state.
 - The web app's `~/.labler/settings.json` is the app authority and is SEPARATE from the CLI's
   `~/.config/labler/config.json`. Web default host is the IPv4 `192.168.25.219` (the mDNS name
   resolved to IPv6 this session and refused :9100).

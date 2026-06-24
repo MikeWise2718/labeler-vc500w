@@ -30,11 +30,12 @@ EVENTS_FILE = LOG_DIR / "events.jsonl"
 ASSETS_DIR = RUNTIME_DIR / "assets"
 DESIGNS_DIR = RUNTIME_DIR / "designs"
 HISTORY_FILE = RUNTIME_DIR / "history.jsonl"
+HISTORY_DIR = RUNTIME_DIR / "history"       # per-print thumbnails: <entry_id>.png
 
 
 def ensure_runtime() -> None:
     """Create the runtime directory tree if missing. Cheap; safe to call often."""
-    for d in (RUNTIME_DIR, LOG_DIR, ASSETS_DIR, DESIGNS_DIR):
+    for d in (RUNTIME_DIR, LOG_DIR, ASSETS_DIR, DESIGNS_DIR, HISTORY_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 

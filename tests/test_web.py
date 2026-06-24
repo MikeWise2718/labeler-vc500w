@@ -24,6 +24,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "ASSETS_DIR", tmp_path / "assets")
     monkeypatch.setattr(runtime, "DESIGNS_DIR", tmp_path / "designs")
     monkeypatch.setattr(runtime, "HISTORY_FILE", tmp_path / "history.jsonl")
+    monkeypatch.setattr(runtime, "HISTORY_DIR", tmp_path / "history")
     app = webapp.create_app()
     app.testing = True
     return app.test_client()
@@ -126,12 +127,39 @@ def test_print_flow_monkeypatched(client, monkeypatch):
     r = client.post("/api/print", json=dl).get_json()
     assert r["ok"] is True
     assert sent["bytes"] > 0
-    # history recorded the print
+    # history recorded the print, with orientation + length + a thumbnail link
     hist = client.get("/api/history").get_json()["history"]
-    assert len(hist) == 1 and hist[0]["name"] == "t"
-    # delete it
-    assert client.delete("/api/history/" + hist[0]["id"]).get_json()["ok"]
+    assert len(hist) == 1
+    h = hist[0]
+    assert h["name"] == "t"
+    assert h["orientation"] == "landscape"     # 312 wide x 80 long -> landscape
+    assert h["length_cm"] is not None
+    assert h["thumb"] == f"/api/history/{h['id']}/thumb.png"
+    # thumbnail is served
+    thumb = client.get(h["thumb"])
+    assert thumb.status_code == 200 and thumb.mimetype == "image/png"
+    # delete removes the entry (and its thumbnail)
+    assert client.delete("/api/history/" + h["id"]).get_json()["ok"]
     assert client.get("/api/history").get_json()["history"] == []
+    assert client.get(h["thumb"]).status_code == 404
+
+
+def test_history_thumb_fallback_for_old_entry(client):
+    # An entry written before thumbnails existed (no PNG file) still renders a
+    # thumbnail from its stored display_list.
+    import json as _json
+    runtime.ensure_runtime()
+    rec = {"id": "oldentry1234", "timestamp": "2026-06-10T00:00:00+00:00", "name": "old",
+           "media_mm": 25, "bytes": 100,
+           "display_list": {"media_mm": 25, "length_px": 80,
+                            "elements": [{"type": "border", "thickness": 2}]}}
+    runtime.HISTORY_FILE.write_text(_json.dumps(rec) + "\n", encoding="utf-8")
+    # listing backfills orientation
+    h = client.get("/api/history").get_json()["history"][0]
+    assert h["orientation"] in ("portrait", "landscape", "square")
+    # thumbnail falls back to rendering the display_list
+    thumb = client.get("/api/history/oldentry1234/thumb.png")
+    assert thumb.status_code == 200 and thumb.mimetype == "image/png"
 
 
 def test_status_endpoint_monkeypatched(client, monkeypatch):

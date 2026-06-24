@@ -19,6 +19,7 @@
     <button class="tab active" data-tab="print">Print</button>
     <button class="tab" data-tab="edit">Edit</button>
     <button class="tab" data-tab="device">Device</button>
+    <button class="tab" data-tab="history">History</button>
     <button class="tab" data-tab="settings">Settings</button>
     <button class="tab" data-tab="about">About</button>
   </nav>
@@ -160,12 +161,17 @@
       <p class="hint" id="settings-status"></p>
     </section>
 
+    <!-- ============ HISTORY ============ -->
+    <section id="tab-history" class="panel">
+      <h2>Print history</h2>
+      <p class="hint">Past prints — click <b>Load</b> to reopen one in the editor.</p>
+      <ul id="history-list" class="history"></ul>
+    </section>
+
     <!-- ============ ABOUT ============ -->
     <section id="tab-about" class="panel">
       <h2>About</h2>
       <table class="kv" id="about-table"></table>
-      <h3>Print history</h3>
-      <ul id="history-list" class="history"></ul>
     </section>
   </main>
 
