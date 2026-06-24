@@ -71,10 +71,10 @@ protocol breakdown and citations.
   history `remain` deltas: a "0.7 cm" senckenberg design actually ate **10.6 cm** (`remain` 26.03→…→
   11.33). Fix (v0.5.0): send **`<autofit>0</autofit>`** with the JPEG's real `<width>/<height>`
   (parsed from the SOF marker via `protocol._jpeg_size`) so the printer prints our 312×N pixels 1:1
-  and `measure == actual tape used`. **NEEDS HARDWARE CONFIRMATION** — autofit=0 width/height
-  semantics are reverse-engineered, not yet verified on our firmware. Verify by printing the landscape
-  senckenberg label and checking the `remain` delta matches the previewed length. (The old colortest
-  printed fine under autofit=1 only because it was already portrait/tall.)
+  and `measure == actual tape used`. **CONFIRMED ON HARDWARE 2026-06-24:** the landscape senckenberg
+  label now prints correctly (short, across the tape) and the before/after `remain` delta read **3.4
+  cm — matched a ruler measurement.** (The old colortest printed fine under autofit=1 only because it
+  was already portrait/tall.)
 - **Tape-used = hardware truth (remain before/after).** The web app now reads `remain` right BEFORE
   and AFTER each print; the delta is the authoritative tape consumed (pixel estimate is unreliable
   under autofit). Stored per history entry as `remain_before_in/remain_after_in/tape_used_in`.
