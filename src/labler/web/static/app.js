@@ -331,6 +331,12 @@ async function renderPrintPreview() {
   $("#print-media").value = design.media_mm;
   // Same exact print render as everywhere else — what you see is what feeds out.
   renderPrintRender("#print-preview", "#print-ruler", "#print-tape-used", design);
+  // Orientation badge from the measured render.
+  const m = await api.post("/api/measure", design);
+  if (m.ok) {
+    const orient = m.length_px > m.width_px ? "portrait" : (m.length_px < m.width_px ? "landscape" : "square");
+    $("#print-orient").innerHTML = `<span class="badge ${orient}">${orient}</span>`;
+  }
 }
 
 $("#btn-print").onclick = async () => {
@@ -338,12 +344,20 @@ $("#btn-print").onclick = async () => {
   // Confirm with the actual tape length so the user knows before burning tape.
   const m = await api.post("/api/measure", design);
   const len = m.ok ? `${m.length_cm} cm (${m.length_in}″)` : "?";
-  if (!confirm(`Print this label? It will use ${len} of tape.`)) return;
+  if (!confirm(`Print this label? It will use about ${len} of tape.`)) return;
   const body = { ...design, mode: $("#print-mode").value, cut: $("#print-cut").value };
   flash("#print-status", "printing… (hold tight, ~10–20 s)");
   const r = await api.post("/api/print", body);
-  if (r.ok) flash("#print-status", `✓ printed — tape remaining ${r.remain_in ?? "?"}"`);
-  else flash("#print-status", "✗ " + (r.error || ("state " + r.state)));
+  if (r.ok) {
+    // Show the TRUE tape stats from the hardware before/after remain delta.
+    const stats = [];
+    if (r.remain_before != null) stats.push(`before ${r.remain_before}″`);
+    if (r.tape_used_in != null) stats.push(`used ${r.tape_used_in}″ (${(r.tape_used_in*2.54).toFixed(1)} cm)`);
+    if (r.remain_after != null) stats.push(`now ${r.remain_after}″`);
+    flash("#print-status", "✓ printed — " + (stats.join(" · ") || `remaining ${r.remain_in ?? "?"}″`));
+  } else {
+    flash("#print-status", "✗ " + (r.error || ("state " + r.state)));
+  }
   pollStatus();
 };
 $("#btn-reset").onclick = async () => {
@@ -417,14 +431,22 @@ async function loadHistory() {
   if (!history.length) { ul.innerHTML = `<li class="muted">No prints yet.</li>`; return; }
   history.forEach(h => {
     const li = document.createElement("li");
-    const len = h.length_cm != null ? `${h.length_cm} cm (${h.length_in}″)` : "?";
+    // Prefer the TRUE hardware tape-used (before/after remain delta); fall back to
+    // the pixel estimate for old entries that didn't capture it.
+    let used;
+    if (h.tape_used_cm != null) used = `${h.tape_used_cm} cm (${h.tape_used_in}″)`;
+    else if (h.est_length_cm != null) used = `~${h.est_length_cm} cm (est.)`;
+    else used = "?";
     const orient = h.orientation
       ? `<span class="badge ${h.orientation}">${h.orientation}</span>` : "";
+    const remainBits = (h.remain_before_in != null && h.remain_after_in != null)
+      ? `<br><small class="muted">remaining ${h.remain_before_in}″ → ${h.remain_after_in}″</small>` : "";
     li.innerHTML = `
       <img class="h-thumb" src="${h.thumb}" alt="" loading="lazy">
       <div class="h-meta">
         <b>${escapeHtml(h.name) || "(untitled)"}</b> ${orient}<br>
-        <small>${fmtTime(h.timestamp)} · ${h.media_mm} mm tape · length ${len}</small>
+        <small>${fmtTime(h.timestamp)} · ${h.media_mm} mm tape · tape used ${used}</small>
+        ${remainBits}
       </div>
       <div class="h-actions"><button data-load>Load</button><button data-del>✕</button></div>`;
     li.querySelector("[data-load]").onclick = () => loadDesignIntoEditor(h.display_list);

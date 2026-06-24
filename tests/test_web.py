@@ -119,21 +119,28 @@ def test_print_flow_monkeypatched(client, monkeypatch):
         sent["host"] = host
         sent["bytes"] = len(jpeg)
         return Status(print_state="IDLE", print_job_stage="SUCCESS",
-                      print_job_error="NONE", remain=30.0)
+                      print_job_error="NONE", remain=27.5)   # remain AFTER print
 
+    # get_status is queried for remain BEFORE the print -> tape used = 30.0 - 27.5
+    monkeypatch.setattr(webapp.protocol, "get_status",
+                        lambda host, **k: Status(print_state="IDLE", remain=30.0))
     monkeypatch.setattr(webapp.protocol, "print_jpeg", fake_print)
     dl = {"name": "t", "media_mm": 25, "length_px": 80,
           "elements": [{"type": "text", "x": 0, "y": 0, "w": 312, "h": 80, "text": "go"}]}
     r = client.post("/api/print", json=dl).get_json()
     assert r["ok"] is True
     assert sent["bytes"] > 0
-    # history recorded the print, with orientation + length + a thumbnail link
+    # TRUE tape used from the hardware before/after remain delta
+    assert r["remain_before"] == 30.0 and r["remain_after"] == 27.5
+    assert r["tape_used_in"] == 2.5
+    # history recorded the print, with orientation + tape stats + a thumbnail link
     hist = client.get("/api/history").get_json()["history"]
     assert len(hist) == 1
     h = hist[0]
     assert h["name"] == "t"
     assert h["orientation"] == "landscape"     # 312 wide x 80 long -> landscape
-    assert h["length_cm"] is not None
+    assert h["tape_used_in"] == 2.5 and h["tape_used_cm"] is not None
+    assert h["remain_before_in"] == 30.0 and h["remain_after_in"] == 27.5
     assert h["thumb"] == f"/api/history/{h['id']}/thumb.png"
     # thumbnail is served
     thumb = client.get(h["thumb"])

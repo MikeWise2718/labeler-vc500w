@@ -75,6 +75,38 @@ def test_connect_timeout_raises_connection_busy(monkeypatch):
         protocol.get_status("printer.local")
 
 
+def test_jpeg_size_parses_real_jpeg():
+    # A real JPEG carries its dimensions in the SOF marker; _jpeg_size must read them
+    # so the print XML sends the true width/height (autofit=0).
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (312, 96), "white").save(buf, "JPEG")
+    assert protocol._jpeg_size(buf.getvalue()) == (312, 96)
+
+
+def test_jpeg_size_unparseable_returns_zero():
+    assert protocol._jpeg_size(b"\xff\xd8notjpeg\xff\xd9") == (0, 0)
+
+
+def test_print_jpeg_sends_real_dimensions(monkeypatch):
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (312, 50), "white").save(buf, "JPEG")
+    jpeg = buf.getvalue()
+    net = FakeNet([[
+        b"<status><code>0</code><comment>ready to receive</comment></status>",
+        b"<status><print_state>IDLE</print_state><print_job_stage>SUCCESS</print_job_stage>"
+        b"<print_job_error>NONE</print_job_error></status>",
+    ]])
+    _patch_net(monkeypatch, net)
+    protocol.print_jpeg("h", jpeg)
+    text = net.sent_text()
+    assert "<width>312</width>" in text and "<height>50</height>" in text
+    assert "<autofit>0</autofit>" in text
+
+
 def test_print_jpeg_full_sequence(monkeypatch):
     # ONE held connection: print ack, then status polls on the SAME socket. The
     # brief empty reply right after the JPEG is ignored; then BUSY/PRINTING, then
@@ -98,6 +130,7 @@ def test_print_jpeg_full_sequence(monkeypatch):
     text = net.sent_text()
     assert "<mode>vivid</mode>" in text          # print params
     assert "<cutmode>full</cutmode>" in text
+    assert "<autofit>0</autofit>" in text        # autofit OFF: we control geometry
     assert "/status.xml" in text                 # polled (on the held connection)
     assert "<lock>" not in text                  # lockless: no lock at all
     assert "job_token" not in text               # no token threaded anywhere

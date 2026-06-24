@@ -81,6 +81,31 @@ def _status_query() -> str:
     return f"{_XML_HEAD}<read>\n<path>/status.xml</path>\n</read>\n"
 
 
+def _jpeg_size(jpeg: bytes) -> tuple[int, int]:
+    """(width, height) of a JPEG, parsed from its SOF marker — no PIL dependency here.
+
+    Falls back to (0, 0) if it can't be parsed (then the caller's autofit=0 width/height
+    are 0, which the firmware treats as 'use the embedded image size')."""
+    i = 2  # skip SOI (FFD8)
+    n = len(jpeg)
+    try:
+        while i + 9 < n:
+            if jpeg[i] != 0xFF:
+                i += 1
+                continue
+            marker = jpeg[i + 1]
+            # SOF0..SOF15 carry the frame dimensions (skip DHT/DAC/RST/SOI/EOI/SOS).
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                h = (jpeg[i + 5] << 8) | jpeg[i + 6]
+                w = (jpeg[i + 7] << 8) | jpeg[i + 8]
+                return w, h
+            seg_len = (jpeg[i + 2] << 8) | jpeg[i + 3]
+            i += 2 + seg_len
+    except IndexError:
+        pass
+    return 0, 0
+
+
 def get_status(host: str, *, timeout: float = 8.0) -> Status:
     """Query the printer once and return its parsed Status."""
     sock = _connect(host, timeout)
@@ -125,6 +150,13 @@ def print_jpeg(
     speed, lpi = _MODE_PARAMS[mode]
     datasize = len(jpeg)
 
+    # Read the JPEG's real pixel size so we can tell the printer to print it AS-IS
+    # (autofit=0). With autofit=1 the firmware rescales/reorients the image — a
+    # landscape label then prints stretched down the tape, consuming far more length
+    # than the design (e.g. a 0.7cm design ate 10.6cm). We render at the exact tape
+    # geometry already, so autofit must be off for measure==print to hold.
+    img_w, img_h = _jpeg_size(jpeg)
+
     def progress(stage: str) -> None:
         if on_progress:
             on_progress(stage)
@@ -132,11 +164,12 @@ def print_jpeg(
     progress("sending")
     sock = _connect(host, timeout)
     try:
-        # 1. print XML (no lock, no job_token) + raw JPEG bytes.
+        # 1. print XML (no lock, no job_token) + raw JPEG bytes. autofit=0 with the
+        #    real width/height -> printer prints our pixels 1:1 across the tape.
         print_xml = (
             f"{_XML_HEAD}<print>\n<mode>{mode}</mode>\n<speed>{speed}</speed>\n"
-            f"<lpi>{lpi}</lpi>\n<width>0</width>\n<height>0</height>\n"
-            f"<dataformat>jpeg</dataformat>\n<autofit>1</autofit>\n"
+            f"<lpi>{lpi}</lpi>\n<width>{img_w}</width>\n<height>{img_h}</height>\n"
+            f"<dataformat>jpeg</dataformat>\n<autofit>0</autofit>\n"
             f"<datasize>{datasize}</datasize>\n<cutmode>{cut}</cutmode>\n</print>\n"
         )
         _send(sock, print_xml)

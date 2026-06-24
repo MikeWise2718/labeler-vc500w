@@ -162,15 +162,28 @@ def create_app() -> Flask:
         cut = body.get("cut", s.cut)
         try:
             with _printer_lock:
+                # Capture tape remaining BEFORE the print, then print, then read it
+                # AGAIN. The before/after delta is the TRUE tape consumed (hardware
+                # truth) — more reliable than the pixel estimate, which the printer's
+                # autofit can scale unpredictably for landscape images.
+                try:
+                    remain_before = protocol.get_status(s.host).remain
+                except LablerError:
+                    remain_before = None
                 st = protocol.print_jpeg(s.host, jpeg, mode=mode, cut=cut)
         except LablerError as e:
             log_event("print.failed", str(e), host=s.host)
             return jsonify(ok=False, error=str(e)), 502
         ok = st.print_job_error in (None, "NONE")
-        entry = _append_history(body, jpeg, st)
+        remain_after = st.remain
+        entry = _append_history(body, jpeg, st, remain_before=remain_before)
         log_event("print.done", "printed", host=s.host, ok=ok,
-                  state=st.print_state, remain=st.remain, entry=entry)
-        return jsonify(ok=ok, entry=entry, **_status_dict(st))
+                  state=st.print_state, remain=st.remain, entry=entry,
+                  remain_before=remain_before, remain_after=remain_after)
+        used = (round(remain_before - remain_after, 2)
+                if remain_before is not None and remain_after is not None else None)
+        return jsonify(ok=ok, entry=entry, remain_before=remain_before,
+                       remain_after=remain_after, tape_used_in=used, **_status_dict(st))
 
     # ---- assets (uploaded bitmaps) --------------------------------------------
     @app.post("/api/assets")
@@ -270,16 +283,19 @@ def create_app() -> Flask:
         # using their stored display_list. Cheap; keeps old prints fully shown.
         items = _read_history()
         for h in items:
+            # Backfill orientation/estimate for old entries from their display_list.
             if h.get("orientation") is None and h.get("display_list"):
                 try:
                     d = compose.measure_display_list(_resolve_assets(dict(h["display_list"])))
-                    h.setdefault("length_cm", d["length_cm"])
-                    h.setdefault("length_in", d["length_in"])
-                    h["width_px"] = h.get("width_px") or d["width_px"]
-                    h["length_px"] = h.get("length_px") or d["length_px"]
+                    h["est_width_px"] = h.get("est_width_px") or d["width_px"]
+                    h["est_length_px"] = h.get("est_length_px") or d["length_px"]
+                    h.setdefault("est_length_cm", d["length_cm"])
                     h["orientation"] = _orientation(d["width_px"], d["length_px"])
                 except Exception:
                     pass
+            # Back-compat: older entries stored length under different keys.
+            if h.get("tape_used_cm") is None and h.get("tape_used_in") is not None:
+                h["tape_used_cm"] = round(h["tape_used_in"] * 2.54, 1)
             h["thumb"] = f"/api/history/{h['id']}/thumb.png"
         return jsonify(history=items)
 
@@ -440,11 +456,12 @@ def _orientation(width_px: int, length_px: int) -> str:
     return "square"
 
 
-def _append_history(body: dict, jpeg: bytes, st) -> str:
+def _append_history(body: dict, jpeg: bytes, st, *, remain_before=None) -> str:
     runtime.ensure_runtime()
     entry_id = hashlib.sha1(jpeg + runtime.now_iso().encode()).hexdigest()[:12]
     dl = {k: v for k, v in body.items() if k != "src"}
-    # Physical size + orientation, measured from the same display-list that printed.
+    # Pixel estimate of the design size (best-effort; the printer's autofit may scale
+    # it differently, so the hardware before/after remain is the authoritative used).
     try:
         dims = compose.measure_display_list(_resolve_assets(dict(dl)))
     except Exception:
@@ -454,17 +471,25 @@ def _append_history(body: dict, jpeg: bytes, st) -> str:
         (runtime.HISTORY_DIR / f"{entry_id}.png").write_bytes(jpeg)
     except OSError:
         pass
+    remain_after = st.remain
+    tape_used_in = (round(remain_before - remain_after, 2)
+                    if remain_before is not None and remain_after is not None else None)
     rec = {
         "id": entry_id,
         "timestamp": runtime.now_iso(),
         "name": body.get("name", ""),
         "media_mm": body.get("media_mm", 25),
         "bytes": len(jpeg),
-        "remain_in": st.remain,
-        "width_px": dims.get("width_px"),
-        "length_px": dims.get("length_px"),
-        "length_cm": dims.get("length_cm"),
-        "length_in": dims.get("length_in"),
+        # tape stats (hardware truth)
+        "remain_before_in": remain_before,
+        "remain_after_in": remain_after,
+        "tape_used_in": tape_used_in,
+        "tape_used_cm": round(tape_used_in * 2.54, 1) if tape_used_in is not None else None,
+        "remain_in": remain_after,                     # back-compat alias
+        # pixel estimate of the design (not necessarily what fed out)
+        "est_width_px": dims.get("width_px"),
+        "est_length_px": dims.get("length_px"),
+        "est_length_cm": dims.get("length_cm"),
         "orientation": _orientation(dims.get("width_px", 0), dims.get("length_px", 0)) if dims else None,
         "display_list": dl,
     }
