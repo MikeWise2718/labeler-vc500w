@@ -431,12 +431,12 @@ async function loadHistory() {
   if (!history.length) { ul.innerHTML = `<li class="muted">No prints yet.</li>`; return; }
   history.forEach(h => {
     const li = document.createElement("li");
-    // Prefer the TRUE hardware tape-used (before/after remain delta); fall back to
-    // the pixel estimate for old entries that didn't capture it.
-    let used;
-    if (h.tape_used_cm != null) used = `${h.tape_used_cm} cm (${h.tape_used_in}″)`;
-    else if (h.est_length_cm != null) used = `~${h.est_length_cm} cm (est.)`;
-    else used = "?";
+    // Only show tape-used when we have the TRUE hardware figure (before/after remain
+    // delta). Old entries that predate hardware stats have only a pixel estimate that
+    // is unreliable for landscape labels (autofit blowup) — so we hide it entirely
+    // rather than mislead.
+    const usedBit = h.tape_used_cm != null
+      ? ` · tape used ${h.tape_used_cm} cm (${h.tape_used_in}″)` : "";
     const orient = h.orientation
       ? `<span class="badge ${h.orientation}">${h.orientation}</span>` : "";
     const remainBits = (h.remain_before_in != null && h.remain_after_in != null)
@@ -445,7 +445,7 @@ async function loadHistory() {
       <img class="h-thumb" src="${h.thumb}" alt="" loading="lazy">
       <div class="h-meta">
         <b>${escapeHtml(h.name) || "(untitled)"}</b> ${orient}<br>
-        <small>${fmtTime(h.timestamp)} · ${h.media_mm} mm tape · tape used ${used}</small>
+        <small>${fmtTime(h.timestamp)} · ${h.media_mm} mm tape${usedBit}</small>
         ${remainBits}
       </div>
       <div class="h-actions"><button data-load>Load</button><button data-del>✕</button></div>`;
