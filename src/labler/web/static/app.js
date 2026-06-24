@@ -84,7 +84,7 @@ function addElement(type) {
   const y0 = nextFreeY();
   let el;
   if (type === "image") el = { type, x: 0, y: y0, w, h: 200, rotate: 0, z, src_id: null, fit: "contain" };
-  else if (type === "text") el = { type, x: 8, y: y0, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || null, font_size: 56, color: "black", align: "center", bold: false, italic: false };
+  else if (type === "text") el = { type, x: 8, y: y0, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || defaultFont() || null, font_size: 56, color: "black", align: "center", bold: false, italic: false };
   else if (type === "border") el = { type, z: 99, color: "black", thickness: 4 };
   design.elements.push(el);
   selected = design.elements.length - 1;
@@ -577,7 +577,18 @@ async function loadFonts() {
   window.__fonts = fonts;
   window.__fontMeta = Object.fromEntries(fonts.map(f => [f.name, f]));
   window.__fontLegacy = legacy || {};   // raw "arial.ttf" -> family "Arial"
+  // Prefer a real family (Arial) over the style-less "(default)" so Bold/Italic work
+  // out of the box. If the user hasn't chosen one, adopt the default as the setting.
+  if (!settingsCache.font) settingsCache.font = defaultFont();
   fillFontSelect($("#set-font"), normalizeFont(settingsCache.font));
+}
+// Best default family: Arial if installed, else the first available real family,
+// else "" (the bitmap "(default)", which has no bold/italic).
+function defaultFont() {
+  const fonts = window.__fonts || [];
+  if (window.__fontMeta && window.__fontMeta["Arial"]) return "Arial";
+  const real = fonts.find(f => f.name !== "(default)");
+  return real ? real.name : "";
 }
 // Map a stored font value (possibly a legacy .ttf filename) to a family name.
 // __fontLegacy[file] = {family, bold, italic}.
