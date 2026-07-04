@@ -125,8 +125,31 @@ function pickImageFor(el) {
 
 function renderEditor() {
   renderElementList();
+  renderBackgroundControl();
   renderProps();
   scheduleRender();
+}
+
+// Whole-label background color (Edit tab). Reuses the swatch component but binds to
+// design.background instead of an element. "white" is the default; any CSS color works
+// (compose creates the canvas with it, so it feeds out of the printer too).
+function renderBackgroundControl() {
+  const box = $("#canvas-bg");
+  if (!box) return;
+  box.innerHTML = colorField("background", "Background", design.background || "white");
+  const inp = box.querySelector('input[data-k="background"]');
+  if (inp) inp.oninput = () => {
+    design.background = inp.value;
+    syncSwatches("background", inp.value);
+    scheduleRender();
+  };
+  box.querySelectorAll("[data-swatch]").forEach(b => b.onclick = () => {
+    design.background = b.dataset.color;
+    if (inp) inp.value = toHex(b.dataset.color);
+    syncSwatches("background", b.dataset.color);
+    scheduleRender();
+  });
+  syncSwatches("background", design.background || "white");
 }
 
 function renderElementList() {

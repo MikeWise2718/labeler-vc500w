@@ -45,6 +45,14 @@ def test_render_returns_png(client):
     Image.open(io.BytesIO(r.data))  # decodable
 
 
+def test_render_honors_background_color(client):
+    dl = {"media_mm": 25, "length_px": 100, "background": "#ffff00", "elements": []}
+    r = client.post("/api/render", json=dl)
+    assert r.status_code == 200
+    im = Image.open(io.BytesIO(r.data)).convert("RGB")
+    assert im.getpixel((2, 2)) == (255, 255, 0)  # top-left = chosen background
+
+
 def test_fonts_endpoint_shape(client):
     r = client.get("/api/fonts").get_json()
     assert isinstance(r["fonts"], list) and r["fonts"]

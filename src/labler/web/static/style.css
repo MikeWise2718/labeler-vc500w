@@ -93,6 +93,8 @@ label select, label input { margin-top: 3px; }
 #element-list li .el-type { flex: 1; }
 #element-list li .el-btn { padding: 2px 6px; font-size: .75rem; }
 .canvas-meta { display: flex; gap: 8px; }
+.canvas-bg { margin-top: 8px; }
+.canvas-bg label { margin: 0; }
 .design-io { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px; }
 .design-io input { width: 100%; margin-bottom: 4px; }
 .design-io button { flex: 1; font-size: .8rem; }
