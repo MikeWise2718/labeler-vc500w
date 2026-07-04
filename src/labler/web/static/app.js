@@ -109,12 +109,19 @@ function nextFreeY() {
 
 $$("[data-add]").forEach(b => b.addEventListener("click", () => addElement(b.dataset.add)));
 
+// POST an image blob/File to /api/assets (which content-addresses it and saves a
+// copy under ~/.labler/assets/), returning {ok,id,w,h}. Shared by file-pick and paste.
+async function uploadImageBlob(blob, filename = "image.png") {
+  const fd = new FormData();
+  fd.append("file", blob, filename);
+  return fetch("/api/assets", { method: "POST", body: fd }).then(x => x.json());
+}
+
 function pickImageFor(el) {
   const inp = document.createElement("input");
   inp.type = "file"; inp.accept = "image/*";
   inp.onchange = async () => {
-    const fd = new FormData(); fd.append("file", inp.files[0]);
-    const r = await fetch("/api/assets", { method: "POST", body: fd }).then(x => x.json());
+    const r = await uploadImageBlob(inp.files[0], inp.files[0].name);
     if (r.ok) {
       el.src_id = r.id;
       // fit the imported image to tape width preserving aspect
@@ -124,6 +131,47 @@ function pickImageFor(el) {
   };
   inp.click();
 }
+
+// Add a new image element from an already-uploaded asset (id + natural w/h),
+// sized to the tape width preserving aspect. Used by paste.
+function addImageFromAsset(id, natW, natH) {
+  const w = design.media_mm === 50 ? 624 : 312;
+  const z = design.elements.length;
+  const el = {
+    type: "image", x: 0, y: nextFreeY(), w, rotate: 0, z,
+    src_id: id, fit: "contain",
+    h: natW ? Math.round(natH * (w / natW)) : 200,
+  };
+  design.elements.push(el);
+  selected = design.elements.length - 1;
+  renderEditor();
+}
+
+// Paste a bitmap image from the clipboard straight into the editor. The blob is
+// uploaded via /api/assets (which saves a copy under ~/.labler/assets/), then added
+// as an image element. Only acts on the Edit tab, and only when the paste target
+// isn't a text field (so Ctrl+V in the Text box still pastes text).
+document.addEventListener("paste", async (e) => {
+  const onEdit = $("#tab-edit")?.classList.contains("active");
+  if (!onEdit) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  const items = e.clipboardData?.items || [];
+  const imgItem = [...items].find(it => it.type && it.type.startsWith("image/"));
+  if (!imgItem) return;          // nothing image-y on the clipboard; let paste be
+  e.preventDefault();
+  const blob = imgItem.getAsFile();
+  if (!blob) return;
+  const ext = (imgItem.type.split("/")[1] || "png").replace("jpeg", "jpg");
+  flash("#print-status", "pasting image…");
+  const r = await uploadImageBlob(blob, `pasted.${ext}`);
+  if (r.ok) {
+    addImageFromAsset(r.id, r.w, r.h);
+    flash("#print-status", "pasted image (saved to assets)");
+  } else {
+    alert("paste failed: " + (r.error || "upload error"));
+  }
+});
 
 function renderEditor() {
   renderElementList();

@@ -16,8 +16,8 @@
   </header>
 
   <nav id="tabs">
-    <button class="tab active" data-tab="print">Print</button>
-    <button class="tab" data-tab="edit">Edit</button>
+    <button class="tab active" data-tab="edit">Edit</button>
+    <button class="tab" data-tab="print">Print</button>
     <button class="tab" data-tab="device">Device</button>
     <button class="tab" data-tab="history">History</button>
     <button class="tab" data-tab="settings">Settings</button>
@@ -26,7 +26,7 @@
 
   <main>
     <!-- ============ PRINT ============ -->
-    <section id="tab-print" class="panel active">
+    <section id="tab-print" class="panel">
       <h2>Print</h2>
       <div class="print-layout">
         <div class="preview-col">
@@ -65,7 +65,7 @@
     </section>
 
     <!-- ============ EDIT ============ -->
-    <section id="tab-edit" class="panel">
+    <section id="tab-edit" class="panel active">
       <h2>Edit</h2>
       <div class="editor">
         <aside class="elements">
@@ -74,6 +74,7 @@
             <button data-add="text">+ Text</button>
             <button data-add="border">+ Border</button>
           </div>
+          <p class="hint" style="margin:2px 0 8px">Tip: <b>Ctrl+V</b> pastes a copied image straight onto the label.</p>
           <ul id="element-list"></ul>
           <div class="canvas-meta">
             <label>Tape
