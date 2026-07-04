@@ -1,6 +1,6 @@
 [project]
 name = "labler-vc500w"
-version = "0.7.3"
+version = "0.7.4"
 description = "Print labels directly to a Brother VC-500W ZINK color label printer over the LAN (no Brother software)."
 readme = "README.md"
 requires-python = ">=3.10"

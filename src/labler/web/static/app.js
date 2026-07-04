@@ -60,6 +60,8 @@ $$(".tab").forEach(t => t.addEventListener("click", () => {
   pollStatus();
   setInterval(pollStatus, 15000);
   addElement("text");           // start with one text element so the canvas isn't empty
+  renderPrintPreview();         // Print is the default tab — render it now so its
+                                // preview isn't a broken-image icon until first visit
 })();
 
 // ---- status pill ------------------------------------------------------------
@@ -306,10 +308,20 @@ async function renderCanvas() {
   const blob = resp.ok ? await resp.blob() : null;
   if (resp.ok) dlog(`renderCanvas — got PNG ${resp.headers.get("X-Label-Width-Px")}×${resp.headers.get("X-Label-Length-Px")} px`);
   else dlog(`renderCanvas — /api/render FAILED ${resp.status}`);
-  const img = $("#edit-preview");
-  if (blob) img.src = URL.createObjectURL(blob);
+  setImgSrc($("#edit-preview"), blob);
   drawOverlay();
   renderPrintRender("#edit-tape-img", "#edit-ruler", "#edit-tape-used", design);
+}
+
+// Set a preview <img> from a blob, revealing it only once it actually loads. A
+// preview img starts hidden (CSS) so an unset/failed src shows nothing instead of
+// the browser's broken-image icon (irritating at load, before the first render).
+function setImgSrc(img, blob) {
+  if (!img) return;
+  if (!blob) { img.classList.remove("loaded"); return; }
+  img.onload = () => img.classList.add("loaded");
+  img.onerror = () => img.classList.remove("loaded");
+  img.src = URL.createObjectURL(blob);
 }
 
 // Show the EXACT print render (same image the printer gets, just PNG). Orientation
@@ -333,7 +345,7 @@ async function renderPrintRender(imgSel, rulerSel, usedSel, dl) {
   const onscreenLen = lpx * (TAPE_W / wpx);
   img.style.width = TAPE_W + "px";
   img.style.height = onscreenLen + "px";
-  img.src = URL.createObjectURL(blob);
+  setImgSrc(img, blob);
   drawRuler(rulerSel, cm, onscreenLen);    // vertical ruler down the length
   const u = $(usedSel);
   if (u) u.textContent = `Tape used: ${cm} cm (${inch}″)`;

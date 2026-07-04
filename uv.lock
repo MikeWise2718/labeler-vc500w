@@ -93,7 +93,7 @@ wheels = [
 
 [[package]]
 name = "labler-vc500w"
-version = "0.7.2"
+version = "0.7.3"
 source = { editable = "." }
 dependencies = [
     { name = "pillow" },

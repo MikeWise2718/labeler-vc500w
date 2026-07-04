@@ -55,7 +55,9 @@ label select, label input { margin-top: 3px; }
   border: 1px solid var(--line); border-radius: 4px; padding: 6px;
   min-width: 120px; min-height: 60px;
 }
-.tape img { display: block; image-rendering: pixelated; background: #fff; max-width: 100%; }
+.tape img { display: block; image-rendering: pixelated; background: #fff; max-width: 100%;
+  visibility: hidden; }              /* revealed once the first render loads */
+.tape img.loaded { visibility: visible; }
 
 /* PRINT tab */
 .print-layout { display: flex; gap: 24px; flex-wrap: wrap; }
@@ -69,7 +71,9 @@ label select, label input { margin-top: 3px; }
 .pv-img {
   image-rendering: pixelated; background: #fff; display: block;
   border: 1px solid var(--line); border-radius: 2px;
+  visibility: hidden;              /* hidden until a real render loads (see .loaded) */
 }
+.pv-img.loaded { visibility: visible; }
 .pv-ruler {
   position: relative; width: 18px; font-size: 9px; color: var(--muted);
   border-right: 1px solid var(--line);
