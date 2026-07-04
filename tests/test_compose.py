@@ -44,6 +44,36 @@ def test_auto_length_grows_to_lowest_element():
     assert img.height < 200
 
 
+def _one(text, **over):
+    el = {"type": "text", "x": 0, "y": 8, "w": 312, "h": 80,
+          "text": text, "font": "Arial", "font_size": 40, "align": "center"}
+    el.update(over)
+    return {"media_mm": 25, "length_px": "auto", "elements": [el]}
+
+
+def test_multiline_text_grows_canvas():
+    one = _decode(compose.render_display_list(_one("One"), fmt="PNG")).height
+    three = _decode(compose.render_display_list(_one("One\nTwo\nThree"), fmt="PNG")).height
+    assert three > one  # more lines -> taller canvas, not clipped to box h
+
+
+def test_multiline_not_clipped_below_box_h():
+    # 5 lines at size 40 far exceed h=80; the element bottom must reflect real text
+    # height so auto-length includes all of it.
+    dl = _one("a\nb\nc\nd\ne", h=80)
+    img = _decode(compose.render_display_list(dl, fmt="PNG"))
+    assert img.height > 8 + 80  # grew past y + box h
+    # render and measure agree (preview == print length)
+    assert compose.measure_display_list(dl)["length_px"] == img.height
+
+
+def test_single_line_unchanged_by_multiline_support():
+    # explicit length is still honored exactly (multiline logic only affects auto)
+    dl = _one("Hi")
+    dl["length_px"] = 200
+    assert _decode(compose.render_display_list(dl, fmt="PNG")).height == 200
+
+
 def test_image_element_composited():
     src = Image.new("RGB", (50, 50), "red")
     dl = {

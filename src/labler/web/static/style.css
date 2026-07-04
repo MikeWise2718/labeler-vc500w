@@ -118,6 +118,11 @@ label select, label input { margin-top: 3px; }
   background: var(--accent); border-radius: 2px; cursor: se-resize;
 }
 .props .form, .props label { font-size: .88rem; }
+.props textarea.text-input {
+  width: 100%; resize: vertical; min-height: 2.4em; font: inherit;
+  background: #1b1e23; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; margin-top: 3px;
+}
 
 /* Bold / Italic toggle buttons in the text props */
 .style-toggles { display: flex; gap: 6px; margin: 8px 0; }

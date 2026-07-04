@@ -157,7 +157,8 @@ function renderElementList() {
   design.elements.forEach((el, i) => {
     const li = document.createElement("li");
     if (i === selected) li.classList.add("sel");
-    const label = el.type === "text" ? `text: ${el.text.slice(0, 12)}` : el.type;
+    const label = el.type === "text"
+      ? `text: ${el.text.replace(/\s+/g, " ").slice(0, 12)}` : el.type;
     li.innerHTML = `<span class="el-type">${label}</span>
       <button class="el-btn" data-up="${i}">↑</button>
       <button class="el-btn" data-down="${i}">↓</button>
@@ -185,7 +186,9 @@ function renderProps() {
   let h = `<h3 style="margin-top:0">${el.type}</h3><div class="form">`;
   const num = (k, lbl, min = 0) => `<label>${lbl}<input type="number" data-k="${k}" value="${el[k] ?? 0}" min="${min}"></label>`;
   if (el.type === "text") {
-    h += `<label>Text<input data-k="text" value="${escapeAttr(el.text)}"></label>`;
+    // Multiline-capable: a textarea so Enter inserts a newline. compose renders
+    // \n as separate lines (multiline_text) honoring the Align setting.
+    h += `<label>Text<textarea data-k="text" rows="2" class="text-input">${escapeHtml(el.text)}</textarea></label>`;
     h += `<label>Font<select data-k="font" id="prop-font"></select></label>`;
     const bOn = fontHas(el.font, "bold"), iOn = fontHas(el.font, "italic");
     h += `<div class="style-toggles" id="prop-style">

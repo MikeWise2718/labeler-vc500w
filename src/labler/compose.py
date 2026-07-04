@@ -54,9 +54,15 @@ def _resolve_image(src) -> Image.Image:
 
 
 def _element_bottom(el: dict) -> int:
-    """Lowest pixel an element occupies, for auto length sizing. Border = 0 (frame)."""
+    """Lowest pixel an element occupies, for auto length sizing. Border = 0 (frame).
+
+    For text, use the real (multiline) text height so auto-length grows to fit all
+    lines rather than clipping to the box `h`.
+    """
     if el.get("type") == "border":
         return 0
+    if el.get("type") == "text":
+        return int(el.get("y", 0)) + _text_height(el)
     return int(el.get("y", 0)) + int(el.get("h", 0))
 
 
@@ -86,23 +92,48 @@ def _render_image_element(canvas: Image.Image, el: dict) -> None:
     canvas.alpha_composite(img.convert("RGBA"), (int(el.get("x", 0)), int(el.get("y", 0))))
 
 
+def _text_metrics(el: dict):
+    """Font + measured (width, height) of a text element's (possibly multiline) text.
+
+    Height is the real rendered text height (all lines), so multiline text is never
+    clipped and auto-length grows to fit it. Returns (font, bbox, text_w, text_h).
+    """
+    text = el.get("text", "")
+    size = int(el.get("font_size", 48))
+    fnt = _load_font(el.get("font"), size,
+                     bold=bool(el.get("bold")), italic=bool(el.get("italic")))
+    align = el.get("align", "left")
+    tmp = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    bbox = tmp.multiline_textbbox((0, 0), text, font=fnt, align=align)
+    return fnt, bbox, bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+def _text_height(el: dict) -> int:
+    """Effective drawn height of a text element: at least its box `h`, but grown to
+    hold all lines of multiline text so nothing is clipped."""
+    if not el.get("text"):
+        return int(el.get("h", 0))
+    _, _, _, th = _text_metrics(el)
+    return max(int(el.get("h", 0)), th)
+
+
 def _render_text_element(canvas: Image.Image, el: dict) -> None:
     text = el.get("text", "")
     if not text:
         return
-    size = int(el.get("font_size", 48))
-    fnt = _load_font(el.get("font"), size,
-                     bold=bool(el.get("bold")), italic=bool(el.get("italic")))
     color = el.get("color", "black")
     align = el.get("align", "left")
     box_w = int(el.get("w", canvas.width))
 
+    fnt, bbox, tw, th = _text_metrics(el)
+    # Layer is tall enough for the full (multiline) text, never just the box `h`, so
+    # extra lines aren't clipped.
+    layer_h = max(1, int(el.get("h", 0)), th)
+
     # Render the text on its own transparent layer, then rotate + paste. This keeps
     # multi-line alignment correct independent of the canvas.
-    layer = Image.new("RGBA", (max(1, box_w), max(1, int(el.get("h", size * 2)))), (0, 0, 0, 0))
+    layer = Image.new("RGBA", (max(1, box_w), layer_h), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
-    bbox = d.multiline_textbbox((0, 0), text, font=fnt, align=align)
-    tw = bbox[2] - bbox[0]
     if align == "center":
         tx = max(0, (box_w - tw) // 2)
     elif align == "right":
