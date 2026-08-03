@@ -282,7 +282,7 @@ without a DOM.
 | B1 | IndexedDB storage layer | 0.8.3 | **Done** |
 | B2 | Cut over history + designs; migration import | 0.8.4 | **Done** |
 | B3 | Export / import JSON | 0.8.5 | **Done** |
-| C1 | Print queue + position feedback | 0.8.6 | Not started |
+| C1 | Print queue + position feedback | 0.8.6 | **Done** |
 | C2 | Shelly power-cycle + wedge detection | 0.8.7 | Not started |
 | 🔧 | **Move the printer** (physical) | — | Not started |
 | D1 | `tools/deploy.sh` | 0.9.0 | Not started |

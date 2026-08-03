@@ -315,3 +315,75 @@ def test_migrate_export_is_read_only(client):
 def test_migrate_export_empty_runtime_is_ok(client):
     r = client.get("/api/migrate/export").get_json()
     assert r["ok"] and r["designs"] == [] and r["history"] == []
+
+
+def test_queue_endpoint_idle(client):
+    r = client.get("/api/queue").get_json()
+    assert r["ok"] and r["busy"] is False and r["waiting"] == 0
+
+
+def test_print_reports_queue_position(client, monkeypatch):
+    """A print that did not wait reports queued_behind=0."""
+    from labler import protocol
+    from labler.status import Status
+    monkeypatch.setattr(protocol, "get_status",
+                        lambda h, **k: Status(raw={}, print_state="IDLE",
+                                              print_job_stage="READY", print_job_error="NONE",
+                                              remain=10.0, cassette_type=1))
+    monkeypatch.setattr(protocol, "print_jpeg",
+                        lambda h, j, **k: Status(raw={}, print_state="IDLE",
+                                                 print_job_stage="READY", print_job_error="NONE",
+                                                 remain=9.0, cassette_type=1))
+    dl = {"media_mm": 25, "length_px": 60, "elements": []}
+    r = client.post("/api/print", json=dl).get_json()
+    assert r["ok"] and r["queued_behind"] == 0
+
+
+def test_concurrent_prints_serialize_through_http(client, monkeypatch):
+    """Two overlapping /api/print calls must not touch the printer at once.
+
+    This is the whole reason a single server owns :9100 — see CLAUDE.md.
+    """
+    import threading
+    import time
+    from labler import protocol
+    from labler.status import Status
+
+    concurrent = 0
+    max_concurrent = 0
+    guard = threading.Lock()
+
+    def slow_print(host, jpeg, **kw):
+        nonlocal concurrent, max_concurrent
+        with guard:
+            concurrent += 1
+            max_concurrent = max(max_concurrent, concurrent)
+        time.sleep(0.05)
+        with guard:
+            concurrent -= 1
+        return Status(raw={}, print_state="IDLE", print_job_stage="READY",
+                      print_job_error="NONE", remain=9.0, cassette_type=1)
+
+    monkeypatch.setattr(protocol, "get_status",
+                        lambda h, **k: Status(raw={}, print_state="IDLE",
+                                              print_job_stage="READY", print_job_error="NONE",
+                                              remain=10.0, cassette_type=1))
+    monkeypatch.setattr(protocol, "print_jpeg", slow_print)
+
+    dl = {"media_mm": 25, "length_px": 60, "elements": []}
+    errors = []
+
+    def do_print():
+        try:
+            client.post("/api/print", json=dl)
+        except Exception as e:      # pragma: no cover
+            errors.append(e)
+
+    threads = [threading.Thread(target=do_print) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+
+    assert not errors
+    assert max_concurrent == 1, f"printer touched by {max_concurrent} requests at once"

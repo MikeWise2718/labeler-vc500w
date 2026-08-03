@@ -20,6 +20,7 @@ import json
 import platform
 import socket
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
@@ -32,7 +33,75 @@ from . import runtime
 from .runtime import WebSettings, log_event
 
 # One printer at a time. Held across the whole status/print op.
+#
+# The VC-500W accepts a single :9100 connection, so every printer touch is
+# serialized. With 2-4 people that is no longer invisible: a second print used to
+# block on this lock until the socket timed out, with the browser showing nothing.
+# _PrintQueue wraps the same lock so a waiting request can be TOLD where it is in
+# line. The serialization guarantee is unchanged — only the visibility is new.
 _printer_lock = threading.Lock()
+
+
+class _PrintQueue:
+    """Tracks who is waiting for the printer, so clients can show a position.
+
+    Deliberately tiny: a counter for ticket numbers, a list of waiting tickets, and
+    the lock itself. Not a job queue — requests still block in FIFO-ish order on
+    _printer_lock; this only exposes how many are ahead of you.
+    """
+
+    def __init__(self, lock: threading.Lock):
+        self._lock = lock                      # the real printer mutex
+        self._guard = threading.Lock()         # guards the bookkeeping below
+        self._next_ticket = 0
+        self._waiting: list[int] = []          # tickets not yet holding the printer
+        self._active: int | None = None        # ticket currently holding it
+
+    def take_ticket(self) -> int:
+        with self._guard:
+            self._next_ticket += 1
+            t = self._next_ticket
+            self._waiting.append(t)
+            return t
+
+    def position(self, ticket: int) -> int:
+        """0 = printing now, N = N jobs ahead, -1 = finished/unknown."""
+        with self._guard:
+            if self._active == ticket:
+                return 0
+            if ticket in self._waiting:
+                # everyone ahead of us in the queue, plus whoever is printing
+                ahead = self._waiting.index(ticket)
+                return ahead + (1 if self._active is not None else 0)
+            return -1
+
+    def snapshot(self) -> dict:
+        with self._guard:
+            return {"waiting": len(self._waiting),
+                    "busy": self._active is not None,
+                    "active_ticket": self._active}
+
+    @contextmanager
+    def hold(self, ticket: int):
+        """Acquire the printer for `ticket`, releasing the bookkeeping on exit."""
+        self._lock.acquire()
+        try:
+            with self._guard:
+                if ticket in self._waiting:
+                    self._waiting.remove(ticket)
+                self._active = ticket
+            yield
+        finally:
+            with self._guard:
+                if self._active == ticket:
+                    self._active = None
+                # defensive: a ticket must never be left waiting after its turn
+                if ticket in self._waiting:
+                    self._waiting.remove(ticket)
+            self._lock.release()
+
+
+_print_queue = _PrintQueue(_printer_lock)
 
 
 def _settings() -> WebSettings:
@@ -70,7 +139,7 @@ def create_app() -> Flask:
     def api_status():
         host = _settings().host
         try:
-            with _printer_lock:
+            with _print_queue.hold(_print_queue.take_ticket()):
                 st = protocol.get_status(host)
         except LablerError as e:
             return jsonify(ok=False, error=str(e), host=host), 502
@@ -81,7 +150,7 @@ def create_app() -> Flask:
         host = _settings().host
         n_prints, last = _history_summary()
         try:
-            with _printer_lock:
+            with _print_queue.hold(_print_queue.take_ticket()):
                 st = protocol.get_status(host)
         except LablerError as e:
             return jsonify(ok=False, error=str(e), host=host,
@@ -99,7 +168,7 @@ def create_app() -> Flask:
         physical power-cycle (documented in CLAUDE.md); we surface that."""
         host = _settings().host
         try:
-            with _printer_lock:
+            with _print_queue.hold(_print_queue.take_ticket()):
                 st = protocol.get_status(host)
         except LablerError as e:
             log_event("device.reset_failed", str(e), host=host)
@@ -163,8 +232,12 @@ def create_app() -> Flask:
         cut = body.get("cut", s.cut)
         media_mm = body.get("media_mm")
         remain_before = None      # set inside the lock; needed by the failure path too
+        # Take a ticket BEFORE blocking, so /api/queue can report our position while
+        # we wait behind someone else's print.
+        ticket = _print_queue.take_ticket()
+        waited_from = _print_queue.position(ticket)
         try:
-            with _printer_lock:
+            with _print_queue.hold(ticket):
                 # Capture tape remaining BEFORE the print, then print, then read it
                 # AGAIN. The before/after delta is the TRUE tape consumed (hardware
                 # truth) — more reliable than the pixel estimate, which the printer's
@@ -198,7 +271,8 @@ def create_app() -> Flask:
             remain_before_in=remain_before, remain_after_in=remain_after,
             tape_used_in=used, jpeg_bytes=len(jpeg))
         return jsonify(ok=ok, entry=entry, remain_before=remain_before,
-                       remain_after=remain_after, tape_used_in=used, **_status_dict(st))
+                       remain_after=remain_after, tape_used_in=used,
+                       queued_behind=max(waited_from, 0), **_status_dict(st))
 
     # ---- assets --------------------------------------------------------------
     # REMOVED in v0.8.1. Bitmaps used to be POSTed here and stored under
@@ -296,6 +370,17 @@ def create_app() -> Flask:
     def api_fonts():
         from ..render import FONT_FILE_TO_FAMILY
         return jsonify(fonts=_available_fonts(), legacy=FONT_FILE_TO_FAMILY)
+
+    # ---- print queue -------------------------------------------------------------
+    @app.get("/api/queue")
+    def api_queue():
+        """How busy the shared printer is right now.
+
+        With several people on one printer, a browser that just hangs is
+        indistinguishable from a broken one. This lets the UI say "someone else is
+        printing" instead of spinning silently.
+        """
+        return jsonify(ok=True, **_print_queue.snapshot())
 
     # ---- shared tape statistics -------------------------------------------------
     @app.get("/api/stats")

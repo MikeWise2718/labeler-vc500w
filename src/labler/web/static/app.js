@@ -664,8 +664,25 @@ $("#btn-print").onclick = async () => {
   const len = m.ok ? `${m.length_cm} cm (${m.length_in}″)` : "?";
   if (!confirm(`Print this label? It will use about ${len} of tape.`)) return;
   const body = { ...design, mode: $("#print-mode").value, cut: $("#print-cut").value };
-  flash("#print-status", "printing… (hold tight, ~10–20 s)");
-  const r = await api.post("/api/print", body);
+  // With several people on one printer, a silent spinner is indistinguishable from
+  // a broken app. Say whether we are printing or waiting for someone else.
+  let q = { busy: false, waiting: 0 };
+  try { q = await api.json("/api/queue"); } catch { /* not fatal */ }
+  flash("#print-status", q.busy
+    ? "waiting — someone else is printing…"
+    : "printing… (hold tight, ~10–20 s)");
+  const queuePoll = setInterval(async () => {
+    try {
+      const s = await api.json("/api/queue");
+      if (s.busy) flash("#print-status", "waiting for the printer…");
+    } catch { /* ignore */ }
+  }, 3000);
+  let r;
+  try {
+    r = await api.post("/api/print", body);
+  } finally {
+    clearInterval(queuePoll);        // never leave a poller running
+  }
   // Record the print in THIS BROWSER's history — the server keeps only statistics.
   // Failures are recorded too: a jam that ate tape is worth seeing in the log.
   try {
