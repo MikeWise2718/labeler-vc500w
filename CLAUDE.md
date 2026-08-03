@@ -5,20 +5,24 @@ A program to print labels **directly** to a Brother **VC-500W** ZINK full-color 
 the LAN, replacing Brother's clunky official software. This is a subproject of the `D:\hw` home
 network workspace.
 
-**Current state (v0.7.0):** working CLI **and** a Flask web label designer, both printing to our
+**Current state (v0.7.5):** working CLI **and** a Flask web label designer, both printing to our
 firmware (status read + print write verified on hardware). The verified core
 (`protocol`/`render`/`compose`/`status`/`config`) is shared by both. The web app
-(`src/labler/web/`) is a **6-tab** UI — **Print / Edit / Device / History / Settings / About** — over
-a display-list editor. Run with `uv run labler-web` (or `run.bat`) → http://localhost:5000. See
-`specs/flask-app.md` for the design and `README.md` for the printer/protocol background.
+(`src/labler/web/`) is a **6-tab** UI — **Edit / Print / Device / History / Settings / About** — over
+a display-list editor. Run with `uv run labler-web` (or `run.bat`) → http://localhost:5000; **the app
+opens on the Edit tab** (you land to design, not to print). See `specs/flask-app.md` for the design
+and `README.md` for the printer/protocol background.
 
 Editor capabilities (Edit tab): stacked display-list of **text / image / border** elements; drag to
 move, corner-handle resize, **click an element on the canvas to select it**; whole-label rotate
-(0/90/180/270) to flip a long design across the tape; **color preset swatches** (standard 8 + greys +
-user-customizable presets saved in Settings); **bold / italic** per text element via font *families*;
-live "print preview" that is byte-identical to what feeds out (preview == print). Saved designs live
-under `~/.labler/designs/<id>/`; every print is logged to History with a thumbnail and hardware
-tape-used stats.
+(0/90/180/270) to flip a long design across the tape; **per-design background color** (swatch +
+picker); **color preset swatches** (standard 8 + greys + user-customizable presets saved in Settings);
+**multiline text** (the Text field is a textarea; auto-length grows to fit all lines, never clipped);
+**bold / italic** per text element via font *families* (defaults to Arial, not the style-less
+bitmap "(default)"); **paste a bitmap with Ctrl+V** straight onto the label (uploaded via
+`/api/assets`, which saves a copy under `~/.labler/assets/`); live "print preview" that is
+byte-identical to what feeds out (preview == print). Saved designs live under `~/.labler/designs/<id>/`;
+every print is logged to History with a thumbnail and hardware tape-used stats.
 
 CLI surface (`labler ...`): `status`, `print-image`, `print-text`, `print-qr` (rich/rich-argparse,
 short flags). Web entry point `labler-web`; CLI entry point `labler`.
@@ -207,3 +211,18 @@ Hard-won, to stop re-paying for them:
 7. **Server access log is colorized + tagged `labler`** (a `WSGIRequestHandler` subclass via rich).
    Polling routes (`/api/status`, `/api/ping`) are dimmed so real traffic stands out. If you don't
    recognize which app is logging to a terminal, that prefix is the tell.
+
+8. **Two DIFFERENT broken-image causes — don't conflate them.** (a) A JS exception aborting the
+   render (lesson #4). (b) An `<img>` that was simply never given a `src` — e.g. a tab's preview that
+   only renders on first click, so the default-visible tab showed the broken glyph at load (fixed
+   v0.7.4 by rendering the Print preview at boot). Guard: preview `<img>`s are `visibility:hidden`
+   until a render actually loads (`setImgSrc` adds `.loaded` on `img.onload`), so an unset/failed src
+   shows nothing rather than the broken glyph.
+
+9. **A running `labler-web` locks `.venv/Scripts/labler-web.exe`, so `uv run` can't reinstall.** If a
+   background/dev server is up when you next `run.bat` (or `uv run labler-web`), the version-bumped
+   package fails to install with `os error 32` (file in use). Kill the stray server first
+   (`Get-CimInstance Win32_Process ... CommandLine -like '*labler-web*'` → `Stop-Process`). When
+   running a server yourself to test, **shut it down when done** — don't leave it holding the exe. To
+   run the test suite while a server is up, call `.venv/Scripts/python.exe -m pytest` directly (skips
+   the `uv` rebuild that would touch the locked exe).

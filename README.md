@@ -4,7 +4,7 @@ A program to print labels **directly** to a Brother **VC-500W** ZINK (Zero-Ink) 
 label printer over the network — bypassing Brother's official desktop/mobile software, which is
 clunky and gets in the way for quick, scriptable label printing.
 
-> **Status:** Working (v0.7.0). A `rich` CLI **and** a Flask web label designer, both printing to our
+> **Status:** Working (v0.7.5). A `rich` CLI **and** a Flask web label designer, both printing to our
 > VC-500W over the LAN. The full wire protocol (status read + print write) is verified against our
 > firmware on hardware. MIT-licensed, built from scratch — see [License](#license).
 
@@ -25,10 +25,12 @@ uv run labler print-qr "https://example.com"
 uv run labler-web            # or run.bat   →  http://localhost:5000
 ```
 
-The web app is the richer surface: a display-list editor (text / image / border elements), drag &
-resize, click-to-select on the canvas, whole-label rotate, color preset swatches, **bold/italic**
-text, a live preview that is byte-identical to what feeds out of the printer, saved designs, and a
-print History with thumbnails and real hardware tape-used stats.
+The web app is the richer surface and opens on the **Edit** tab: a display-list editor (text / image
+/ border elements), drag & resize, click-to-select on the canvas, whole-label rotate, per-design
+**background color**, color preset swatches, **multiline** text, **bold/italic** text, and
+**Ctrl+V to paste a bitmap** straight onto the label (it's saved to `~/.labler/assets/`). A live
+preview is byte-identical to what feeds out of the printer; designs save to disk, and every print is
+logged to History with a thumbnail and real hardware tape-used stats.
 
 **Code vs. runtime split:** code lives in this repo; all mutable state lives under `~/.labler/`
 (Windows `%USERPROFILE%\.labler\`) — `settings.json`, `logs/events.jsonl`, uploaded `assets/`, saved
@@ -148,7 +150,7 @@ src/labler/
     app.py        Flask factory + JSON API (/api/render, /print, /designs, /history, /fonts, …)
     runtime.py    ~/.labler/ layout, WebSettings, JSONL event log
     static/, templates/   vanilla-JS SPA + dark theme (no build step)
-tests/            pytest (protocol / render / compose / web / status) — 60 tests
+tests/            pytest (protocol / render / compose / web / status) — 64 tests
 specs/            design docs (flask-app.md, design.md, tasks.md)
 docs/             LED indications, vendor PDFs
 ```

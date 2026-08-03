@@ -111,19 +111,28 @@ Tabbed single page (`templates/index.html` + `static/app.js` + `static/style.css
 Version in top-left header (`v{{ version }}` from `__version__`). Mobile-responsive
 `@media (max-width:480px)` from the start.
 
-- **Print** — current design preview + Print button; tape-width selector (25/50 mm);
-  live status line; **Reset device** button. Confirms before printing.
-- **Edit** — the designer. Left: element display-list (reorderable, select, delete).
-  Center: live preview `<img>` with draggable/resizable selection box overlay.
-  Right: properties of the selected element (image: crop/scale/fit; text: content/
-  font/size/color/align; border: color/thickness). "Add image / Add text / Add
-  border" buttons. Add-image opens the asset upload + crop. Save / Load design.
+Tab order (left→right): **Edit / Print / Device / History / Settings / About**. The app opens on
+**Edit** (v0.7.5) — you land to design, not to print.
+
+- **Edit** — the designer (default tab). Left: element display-list (reorderable, select, delete),
+  tape width + length, per-design **background color** (swatch + picker), Save / Load / New. Center:
+  live preview `<img>` with draggable/resizable selection-box overlay AND per-element click-to-select
+  hit-boxes; a rotate-whole-label button; below it, the print-preview render (== what feeds out) with
+  a cm ruler + tape-used readout. Right: properties of the selected element — image: replace / fit;
+  text: **multiline** content (textarea) / font family / **Bold·Italic** toggles / size / color
+  (with preset swatches) / align; border: color / thickness. "Add image / Add text / Add border";
+  **Ctrl+V pastes a bitmap** straight onto the label (saved to `~/.labler/assets/`).
+- **Print** — current design preview (== print) + orientation badge + tape-used; tape-width selector
+  (25/50 mm), mode, cut; **Print** and **Reset device** buttons. Confirms tape length before printing.
 - **Device** — per-device detail card: status, firmware version, tape left (in/cm),
   cassette type → media name, last printed, total prints (from history). Diagnostics:
   raw `status.xml` dump, single-connection-slot hint on connect failure.
+- **History** — every print, newest first: thumbnail, name, orientation badge, tape width, and the
+  hardware tape-used (remain before/after delta). Load reopens a print in the editor; delete removes
+  the entry + its thumbnail.
 - **Settings** — collapsible sections: Printer (host, default media, mode, cut),
-  Editor defaults (default font, bg), Display (units in/cm). Persists to
-  `~/.labler/settings.json`.
+  Editor defaults (default font, background, **custom color presets**), Display (units in/cm).
+  Persists to `~/.labler/settings.json`.
 - **About** — app version, Python version, free memory, runtime dir path, links to
   docs, printer model/protocol one-liner.
 
@@ -142,6 +151,28 @@ Version in top-left header (`v{{ version }}` from `__version__`). Mobile-respons
 **v0.2.0 shipped** the full vertical slice: run with `uv run labler-web` → http://localhost:5000.
 41 tests pass (`uv run pytest`). The print path is the verified `protocol.print_jpeg`;
 the web layer serializes printer access with a module-level lock.
+
+**v0.7.5 — Open on Edit + paste bitmaps.** The default tab is now **Edit** (leftmost/active) — you
+land to design, not to print. **Ctrl+V on the Edit tab** pastes a clipboard bitmap straight onto the
+label: the blob is uploaded via `/api/assets` (content-addressed, saved under `~/.labler/assets/`)
+and added as an image element sized to the tape width. Paste is ignored in text fields (so Ctrl+V
+still pastes text) and off the Edit tab. Verified in-browser end-to-end.
+
+**v0.7.4 — no broken-image icon at load.** Print is no longer the default tab, but the same class of
+bug (an `<img>` never given a src) hit the load-time preview. Fixed: render the preview at boot, and
+keep preview `<img>`s `visibility:hidden` until a render loads (`setImgSrc` adds `.loaded`).
+
+**v0.7.3 — multiline text.** The Text field is a `<textarea>`; `\n` renders as separate lines
+(honoring Align). `compose` grows the text layer to the real multiline height (never clipped to box
+`h`) and `_element_bottom` uses it, so auto-length fits all lines and measure==render.
+
+**v0.7.2 — per-design background color.** A Background control (swatch + picker) in the Edit tab
+binds to `design.background` (any CSS color); renders live and prints. The compositor already
+honored it — this was the missing UI.
+
+**v0.7.1 — default to Arial.** New text + the settings default adopt Arial (a real family with all
+four faces) instead of the style-less bitmap "(default)", so Bold/Italic work out of the box.
+`defaultFont()` resolves from the available list (non-Windows hosts pick their own first family).
 
 **v0.7.0 — Bold + italic text.** Text style is now a font **family** + bold/italic flags, not
 raw `.ttf` filenames. `render.FONT_FAMILIES` maps families → regular/bold/italic/bold-italic

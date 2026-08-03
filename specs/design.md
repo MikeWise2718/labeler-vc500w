@@ -4,9 +4,11 @@ Design for a from-scratch tool to print labels directly to a Brother **VC-500W**
 printer over the LAN. Shared core library with two front-ends: a **CLI** (built first) and a **Flask
 web app** (later). MIT licensed.
 
-**Status:** design. Protocol already reverse-engineered and **verified end-to-end against our unit**
-(status read + a real color label printed, 2026-06-14). See `README.md` / `docs/research.md` for the
-protocol record and `CLAUDE.md` for confirmed device facts and gotchas.
+**Status:** shipped (v0.7.5). This is the original design rationale; the CLI and the full Flask web
+app are built and print to hardware. Protocol reverse-engineered and **verified end-to-end against
+our unit** (status read + a real color label printed, 2026-06-14). See `README.md` / `docs/research.md`
+for the protocol record, `specs/flask-app.md` for the web-app design + changelog, and `CLAUDE.md` for
+confirmed device facts and gotchas.
 
 ---
 
