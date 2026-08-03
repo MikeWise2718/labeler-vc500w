@@ -160,6 +160,8 @@ def create_app() -> Flask:
             return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
         mode = body.get("mode", s.mode)
         cut = body.get("cut", s.cut)
+        media_mm = body.get("media_mm")
+        remain_before = None      # set inside the lock; needed by the failure path too
         try:
             with _printer_lock:
                 # Capture tape remaining BEFORE the print, then print, then read it
@@ -172,7 +174,13 @@ def create_app() -> Flask:
                     remain_before = None
                 st = protocol.print_jpeg(s.host, jpeg, mode=mode, cut=cut)
         except LablerError as e:
-            log_event("print.failed", str(e), host=s.host)
+            log_event("print.failed", str(e), host=s.host, kind=type(e).__name__)
+            # A failed attempt still belongs in the shared tape record — a jam that
+            # ate tape is exactly what someone reading the roll burn-down needs.
+            runtime.record_print_stats(
+                host=s.host, media_mm=media_mm, mode=mode, cut=cut, ok=False,
+                error_kind=type(e).__name__, remain_before_in=remain_before,
+                jpeg_bytes=len(jpeg))
             return jsonify(ok=False, error=str(e)), 502
         ok = st.print_job_error in (None, "NONE")
         remain_after = st.remain
@@ -182,6 +190,11 @@ def create_app() -> Flask:
                   remain_before=remain_before, remain_after=remain_after)
         used = (round(remain_before - remain_after, 2)
                 if remain_before is not None and remain_after is not None else None)
+        runtime.record_print_stats(
+            host=s.host, media_mm=media_mm, mode=mode, cut=cut, ok=ok,
+            error_kind=None if ok else (st.print_job_error or "UNKNOWN"),
+            remain_before_in=remain_before, remain_after_in=remain_after,
+            tape_used_in=used, jpeg_bytes=len(jpeg))
         return jsonify(ok=ok, entry=entry, remain_before=remain_before,
                        remain_after=remain_after, tape_used_in=used, **_status_dict(st))
 
@@ -333,6 +346,18 @@ def create_app() -> Flask:
     def api_fonts():
         from ..render import FONT_FILE_TO_FAMILY
         return jsonify(fonts=_available_fonts(), legacy=FONT_FILE_TO_FAMILY)
+
+    # ---- shared tape statistics -------------------------------------------------
+    @app.get("/api/stats")
+    def api_stats():
+        """Shared roll accounting: how much tape has gone, by whom-agnostic day.
+
+        Deliberately contains NO label content — this is the one dataset that is
+        meant to be shared between everyone using the printer. See
+        specs/central-deployment.md.
+        """
+        recs = runtime.read_stats()
+        return jsonify(ok=True, **runtime.summarise_stats(recs))
 
     # ---- about -----------------------------------------------------------------
     @app.get("/api/about")

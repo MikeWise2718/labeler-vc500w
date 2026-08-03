@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 
 import pytest
 from PIL import Image
@@ -25,6 +26,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "DESIGNS_DIR", tmp_path / "designs")
     monkeypatch.setattr(runtime, "HISTORY_FILE", tmp_path / "history.jsonl")
     monkeypatch.setattr(runtime, "HISTORY_DIR", tmp_path / "history")
+    monkeypatch.setattr(runtime, "STATS_FILE", tmp_path / "stats.jsonl")
     app = webapp.create_app()
     app.testing = True
     return app.test_client()
@@ -253,3 +255,38 @@ def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200
     assert b"Labler" in r.data
+
+
+def test_stats_endpoint_empty(client):
+    s = client.get("/api/stats").get_json()
+    assert s["ok"] and s["prints"] == 0 and s["tape_used_in"] == 0.0
+
+
+def test_stats_endpoint_after_print(client, monkeypatch):
+    """A print records a stats row; /api/stats aggregates it and leaks no content."""
+    from labler import protocol
+    from labler.status import Status
+
+    def fake_status(host, **kw):
+        return Status(raw={}, print_state="IDLE", print_job_stage="READY FOR PRINT",
+                      print_job_error="NONE", remain=10.0, cassette_type=1)
+
+    def fake_print(host, jpeg, **kw):
+        return Status(raw={}, print_state="IDLE", print_job_stage="READY FOR PRINT",
+                      print_job_error="NONE", remain=9.0, cassette_type=1)
+
+    monkeypatch.setattr(protocol, "get_status", fake_status)
+    monkeypatch.setattr(protocol, "print_jpeg", fake_print)
+
+    dl = {"name": "Secret Label Name", "media_mm": 25, "length_px": 80,
+          "elements": [{"type": "text", "x": 0, "y": 0, "w": 312, "h": 60,
+                        "text": "CONFIDENTIAL-TEXT", "font_size": 30}]}
+    r = client.post("/api/print", json=dl).get_json()
+    assert r["ok"]
+
+    s = client.get("/api/stats").get_json()
+    assert s["prints"] == 1 and s["succeeded"] == 1
+    assert s["tape_used_in"] == 1.0            # 10.0 -> 9.0 remain delta
+    # the shared stats view must not carry the label's text or name
+    blob = json.dumps(s)
+    assert "CONFIDENTIAL-TEXT" not in blob and "Secret Label Name" not in blob

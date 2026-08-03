@@ -142,3 +142,84 @@ def test_unserialisable_value_does_not_raise(logfile):
 
     runtime.log_event("print.done", "printed", state=Weird())
     assert logfile()[0]["state"] == "weird-obj"
+
+
+# ---- stats stream ----------------------------------------------------------
+# Tape accounting is the one dataset that SHOULD be shared. These tests pin both
+# halves of that: the numbers are right, and no label content rides along.
+
+@pytest.fixture
+def statsfile(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime, "RUNTIME_DIR", tmp_path)
+    monkeypatch.setattr(runtime, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(runtime, "EVENTS_FILE", tmp_path / "logs" / "events.jsonl")
+    monkeypatch.setattr(runtime, "DESIGNS_DIR", tmp_path / "designs")
+    monkeypatch.setattr(runtime, "HISTORY_DIR", tmp_path / "history")
+    monkeypatch.setattr(runtime, "STATS_FILE", tmp_path / "stats.jsonl")
+    return tmp_path / "stats.jsonl"
+
+
+def test_stats_record_shape_is_exactly_the_schema(statsfile):
+    runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full",
+                               ok=True, tape_used_in=1.5)
+    rec = json.loads(statsfile.read_text(encoding="utf-8").splitlines()[0])
+    assert set(rec) == set(runtime.STATS_FIELDS)
+
+
+def test_stats_contain_no_label_content(statsfile):
+    """The schema is closed — there is no field a caller could smuggle text into."""
+    runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full",
+                               ok=True, tape_used_in=1.0)
+    blob = statsfile.read_text(encoding="utf-8")
+    for forbidden in runtime.LOG_FIELD_DENIED_CONTENT:
+        assert f'"{forbidden}"' not in blob
+
+
+def test_stats_record_is_keyword_only():
+    """Positional args would let content slide in by position. Must be kw-only."""
+    with pytest.raises(TypeError):
+        runtime.record_print_stats("host", 25)          # type: ignore[misc]
+
+
+def test_summarise_totals(statsfile):
+    for used, ok in [(1.0, True), (2.0, True), (0.5, False)]:
+        runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full",
+                                   ok=ok, tape_used_in=used)
+    s = runtime.summarise_stats(runtime.read_stats())
+    assert s["prints"] == 3
+    assert s["succeeded"] == 2 and s["failed"] == 1
+    assert s["tape_used_in"] == 3.5
+    assert s["tape_used_cm"] == 8.9        # 3.5 in * 2.54
+
+
+def test_summarise_groups_by_day(statsfile):
+    runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full",
+                               ok=True, tape_used_in=1.25)
+    s = runtime.summarise_stats(runtime.read_stats())
+    assert len(s["by_day"]) == 1
+    assert list(s["by_day"].values())[0] == 1.25
+
+
+def test_summarise_empty_is_safe():
+    s = runtime.summarise_stats([])
+    assert s["prints"] == 0 and s["tape_used_in"] == 0.0
+    assert s["by_day"] == {} and s["last_remain_in"] is None
+
+
+def test_read_stats_skips_torn_line(statsfile):
+    runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full", ok=True,
+                               tape_used_in=1.0)
+    with statsfile.open("a", encoding="utf-8") as f:
+        f.write('{"partial": tru\n')          # torn write, e.g. power loss
+    runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full", ok=True,
+                               tape_used_in=2.0)
+    recs = runtime.read_stats()
+    assert len(recs) == 2                     # the torn line is skipped, not fatal
+    assert runtime.summarise_stats(recs)["tape_used_in"] == 3.0
+
+
+def test_stats_missing_tape_value_does_not_break_totals(statsfile):
+    runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full",
+                               ok=False, error_kind="LablerError")   # no tape figures
+    s = runtime.summarise_stats(runtime.read_stats())
+    assert s["prints"] == 1 and s["tape_used_in"] == 0.0
