@@ -3,4 +3,4 @@
 Single source of truth for the version; the CLI and (future) Flask header read this.
 """
 
-__version__ = "0.7.5"
+__version__ = "0.8.0"

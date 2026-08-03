@@ -263,7 +263,9 @@ def create_app() -> Flask:
             (ddir / "preview.png").write_bytes(png)
         except (ValueError, OSError):
             pass
-        log_event("design.save", "saved design", id=did, name=name)
+        # NB: the design NAME is label content and is deliberately not logged —
+        # runtime.LOG_FIELD_ALLOWLIST would drop it anyway. Log the id only.
+        log_event("design.save", "saved design", id=did)
         return jsonify(ok=True, id=did)
 
     @app.delete("/api/designs/<did>")

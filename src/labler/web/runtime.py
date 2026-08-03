@@ -81,14 +81,61 @@ class WebSettings:
         return self
 
 
+# ---- privacy: statistics-only logging ---------------------------------------
+#
+# The printer is SHARED between people; label content (text, images, design names)
+# is private to whoever printed it and MUST NOT reach the server's event log. See
+# specs/central-deployment.md "Privacy model".
+#
+# This is an ALLOWLIST, deliberately. A denylist — or discipline at the ~12 call
+# sites — springs a leak the first time someone adds a debug field. Anything not
+# named here is dropped before it touches disk. Adding a field is a conscious act
+# that lands in this list, in a diff, where it can be reviewed.
+LOG_FIELD_ALLOWLIST = frozenset({
+    # identity / provenance
+    "version", "host", "hostname", "kind", "id", "entry",
+    # printer state + tape statistics (the whole point of the log)
+    "ok", "state", "stage", "error", "remain", "remain_before", "remain_after",
+    "tape_used_in", "cassette_type", "media", "media_mm", "mode", "cut",
+    # geometry — dimensions are not content
+    "w", "h", "width", "height", "length_px", "count", "keys", "elements",
+    # queue / job bookkeeping
+    "job", "position", "waited_s", "duration_s",
+})
+
+# Fields historically logged that DO carry label content. Named explicitly so the
+# regression test can assert they stay out, and so a future reader knows these are
+# excluded on purpose rather than by oversight.
+LOG_FIELD_DENIED_CONTENT = frozenset({"name", "text", "src", "src_id", "display_list",
+                                      "designs", "history", "thumb", "data"})
+
+
+def _filter_log_fields(fields: dict) -> dict:
+    """Drop any field not on LOG_FIELD_ALLOWLIST. See the allowlist comment."""
+    return {k: v for k, v in fields.items() if k in LOG_FIELD_ALLOWLIST}
+
+
+# An exception's str() can quote the data that caused it — a render error may embed
+# the very label text we are trying to keep off the server. `message` is positional
+# so it bypasses the field allowlist; cap it instead. The exception TYPE (logged as
+# `kind`) is what actually aids debugging, not the interpolated detail.
+MAX_MESSAGE_LEN = 200
+
+
 def log_event(event: str, message: str = "", **fields) -> None:
     """Append one JSON object per line to ~/.labler/logs/events.jsonl.
 
-    Always includes timestamp, event (dotted name), message; plus any extra fields.
+    Always includes timestamp, event (dotted name), message; plus any extra fields
+    that survive LOG_FIELD_ALLOWLIST — label content is dropped, not written.
+    `message` is truncated to MAX_MESSAGE_LEN (see comment above).
     Never raises into the request path — logging must not break a print.
     """
     ensure_runtime()
-    rec = {"timestamp": now_iso(), "event": event, "message": message, **fields}
+    msg = str(message)
+    if len(msg) > MAX_MESSAGE_LEN:
+        msg = msg[:MAX_MESSAGE_LEN] + "…[truncated]"
+    rec = {"timestamp": now_iso(), "event": event, "message": msg,
+           **_filter_log_fields(fields)}
     try:
         with EVENTS_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, default=str) + "\n")
