@@ -57,6 +57,18 @@ $$(".tab").forEach(t => t.addEventListener("click", () => {
   if (DEBUG) console.log("%c[labler] editor debug logging ON — silence with localStorage.removeItem('labler_debug')", "color:#3ecf8e");
   await loadSettings();
   await loadFonts();
+  // One-shot: pull any pre-0.8.3 server-side designs/history into this browser.
+  // Without it, upgrading silently loses every saved design.
+  try {
+    const moved = await store.runMigration(url => api.json(url));
+    if (moved && (moved.designs || moved.history)) {
+      flash("#print-status",
+            `imported ${moved.designs} design(s) and ${moved.history} history entr` +
+            `${moved.history === 1 ? "y" : "ies"} into this browser`);
+    }
+  } catch (e) {
+    dlog("migration skipped", e);
+  }
   pollStatus();
   setInterval(pollStatus, 15000);
   addElement("text");           // start with one text element so the canvas isn't empty
@@ -558,11 +570,33 @@ $("#btn-save-design").onclick = async () => {
     $("#design-name").value = name;
   }
   design.name = name;
-  dlog(`SAVE "${name}" — POSTing elements:`, elDigest(design.elements));
-  const r = await api.post("/api/designs", design);
-  dlog(`SAVE done id=${r.id}`, r);
-  if (r.ok) { design.id = r.id; flash("#print-status", "saved design: " + r.id); }
+  dlog(`SAVE "${name}" — storing elements:`, elDigest(design.elements));
+  try {
+    // Designs live in THIS BROWSER, not on the shared server (they are label
+    // content). The preview PNG still comes from the server render so that the
+    // stored thumbnail is the real print image. specs/central-deployment.md.
+    const preview = await renderPreviewDataURI(design);
+    const id = await store.saveDesign(design, preview);
+    design.id = id;
+    dlog(`SAVE done id=${id}`);
+    flash("#print-status", "saved design: " + id);
+  } catch (e) {
+    alert("could not save design: " + e.message);
+  }
 };
+
+// Render the design server-side and return the PNG as a data URI, for storing as
+// a design preview / history thumbnail. Same render the printer gets (lesson #2:
+// preview must BE the print render).
+async function renderPreviewDataURI(dl) {
+  const r = await fetch("/api/render", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dl),
+  });
+  if (!r.ok) return null;
+  const blob = await r.blob();
+  return await blobToDataURI(blob);
+}
 $("#btn-new-design").onclick = () => {
   const name = (prompt("Name for the new design:", "") || "").trim();
   if (!name) return;  // cancelled — keep current design
@@ -574,14 +608,18 @@ $("#btn-new-design").onclick = () => {
   addElement("text");
 };
 $("#btn-load-design").onclick = async () => {
-  const { designs } = await api.json("/api/designs");
+  const designs = await store.listDesigns();
   const ul = $("#design-list"); ul.innerHTML = "";
+  if (!designs.length) {
+    ul.innerHTML = `<li class="empty">No saved designs in this browser yet.</li>`;
+  }
   designs.forEach(d => {
     const li = document.createElement("li");
-    li.innerHTML = `${d.preview ? `<img src="${d.preview}">` : ""}<span class="d-name">${d.name}</span><button data-del="${d.id}">✕</button>`;
+    li.innerHTML = `${d.preview ? `<img src="${d.preview}">` : ""}<span class="d-name"></span><button data-del="${d.id}">✕</button>`;
+    li.querySelector(".d-name").textContent = d.name;   // textContent: names are user input
     li.querySelector(".d-name").onclick = async () => {
-      design = await api.json("/api/designs/" + d.id);
-      dlog(`LOAD "${d.id}" — server returned elements:`, elDigest(design.elements));
+      design = d.display_list || newDesign();
+      dlog(`LOAD "${d.id}" — stored elements:`, elDigest(design.elements));
       if (!design.elements) design = newDesign();
       migrateFonts(design);
       const orphaned = migrateAssets(design);
@@ -597,7 +635,9 @@ $("#btn-load-design").onclick = async () => {
       $("#modal").classList.add("hidden"); renderEditor();
       dlog(`LOAD applied — design.elements now:`, elDigest(design.elements));
     };
-    li.querySelector("[data-del]").onclick = async () => { await api.del("/api/designs/" + d.id); li.remove(); };
+    li.querySelector("[data-del]").onclick = async () => {
+      await store.deleteDesign(d.id); li.remove();
+    };
     ul.appendChild(li);
   });
   $("#modal").classList.remove("hidden");
@@ -626,6 +666,14 @@ $("#btn-print").onclick = async () => {
   const body = { ...design, mode: $("#print-mode").value, cut: $("#print-cut").value };
   flash("#print-status", "printing… (hold tight, ~10–20 s)");
   const r = await api.post("/api/print", body);
+  // Record the print in THIS BROWSER's history — the server keeps only statistics.
+  // Failures are recorded too: a jam that ate tape is worth seeing in the log.
+  try {
+    const thumb = await renderPreviewDataURI(design);
+    await store.addHistory(design, r, thumb);
+  } catch (e) {
+    dlog("history write failed", e);   // never let logging break the print feedback
+  }
   if (r.ok) {
     // Show the TRUE tape stats from the hardware before/after remain delta.
     const stats = [];
@@ -709,6 +757,41 @@ $("#btn-save-settings").onclick = async () => {
   if (r.ok) { settingsCache = r.settings; flash("#settings-status", "saved"); pollStatus(); }
 };
 
+// ---- export / import (browser-local data) ----------------------------------
+// Browser storage has no backup and dies with site data. This is the escape hatch.
+$("#btn-export-data").onclick = async () => {
+  try {
+    const payload = await store.exportAll();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `labler-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    flash("#data-status",
+          `exported ${payload.designs.length} design(s), ${payload.history.length} history entries`);
+  } catch (e) {
+    flash("#data-status", "export failed: " + e.message);
+  }
+};
+
+$("#btn-import-data").onclick = () => {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "application/json,.json";
+  inp.onchange = async () => {
+    try {
+      const text = await inp.files[0].text();
+      const counts = await store.importAll(JSON.parse(text));
+      flash("#data-status",
+            `imported ${counts.designs} design(s), ${counts.history} history entries`);
+      if ($("#tab-history")?.classList.contains("active")) loadHistory();
+    } catch (e) {
+      flash("#data-status", "import failed: " + e.message);
+    }
+  };
+  inp.click();
+};
+
 async function loadFonts() {
   const { fonts, legacy } = await api.json("/api/fonts");
   // fonts: [{name, has_bold, has_italic}]. Keep a name->meta map for the toggles.
@@ -786,31 +869,44 @@ async function loadAbout() {
   $("#about-table").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
 }
 async function loadHistory() {
-  const { history } = await api.json("/api/history");
+  // History is per-BROWSER (IndexedDB), not server-side: what you printed is label
+  // content and the printer is shared. specs/central-deployment.md.
+  const history = await store.listHistory();
   const ul = $("#history-list"); ul.innerHTML = "";
-  if (!history.length) { ul.innerHTML = `<li class="muted">No prints yet.</li>`; return; }
+  if (!history.length) {
+    ul.innerHTML = `<li class="muted">No prints yet in this browser.</li>`;
+    return;
+  }
   history.forEach(h => {
     const li = document.createElement("li");
     // Only show tape-used when we have the TRUE hardware figure (before/after remain
     // delta). Old entries that predate hardware stats have only a pixel estimate that
     // is unreliable for landscape labels (autofit blowup) — so we hide it entirely
     // rather than mislead.
-    const usedBit = h.tape_used_cm != null
-      ? ` · tape used ${h.tape_used_cm} cm (${h.tape_used_in}″)` : "";
-    const orient = h.orientation
-      ? `<span class="badge ${h.orientation}">${h.orientation}</span>` : "";
-    const remainBits = (h.remain_before_in != null && h.remain_after_in != null)
+    // Only show tape figures that are REAL. Some old entries stored 0 where the
+    // hardware reading was unavailable; printing "tape used 0 cm" or "remaining
+    // 0″ → 0″" states a measurement we never took. Hide rather than mislead
+    // (CLAUDE.md lesson #3 — tape-used is hardware truth or it is nothing).
+    const used = h.tape_used_in;
+    const usedBit = (used != null && used > 0)
+      ? ` · tape used ${Math.round(used * 2.54 * 10) / 10} cm (${used}″)` : "";
+    const haveRemain = h.remain_before_in != null && h.remain_after_in != null
+                       && (h.remain_before_in > 0 || h.remain_after_in > 0);
+    const remainBits = haveRemain
       ? `<br><small class="muted">remaining ${h.remain_before_in}″ → ${h.remain_after_in}″</small>` : "";
+    const failBit = h.ok === false ? ` <span class="badge fail">failed</span>` : "";
     li.innerHTML = `
-      <img class="h-thumb" src="${h.thumb}" alt="" loading="lazy">
+      ${h.thumb ? `<img class="h-thumb" src="${h.thumb}" alt="" loading="lazy">` : `<div class="h-thumb"></div>`}
       <div class="h-meta">
-        <b>${escapeHtml(h.name) || "(untitled)"}</b> ${orient}<br>
+        <b>${escapeHtml(h.name) || "(untitled)"}</b>${failBit}<br>
         <small>${fmtTime(h.timestamp)} · ${h.media_mm} mm tape${usedBit}</small>
         ${remainBits}
       </div>
       <div class="h-actions"><button data-load>Load</button><button data-del>✕</button></div>`;
     li.querySelector("[data-load]").onclick = () => loadDesignIntoEditor(h.display_list);
-    li.querySelector("[data-del]").onclick = async () => { await api.del("/api/history/" + h.id); li.remove(); };
+    li.querySelector("[data-del]").onclick = async () => {
+      await store.deleteHistory(h.id); li.remove();
+    };
     ul.appendChild(li);
   });
 }

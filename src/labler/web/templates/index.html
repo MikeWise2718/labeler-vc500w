@@ -169,6 +169,21 @@
       </details>
       <button id="btn-save-settings" class="primary">Save settings</button>
       <p class="hint" id="settings-status"></p>
+
+      <details open>
+        <summary>My designs &amp; history (this browser)</summary>
+        <p class="hint">
+          Your designs and print history are stored <b>in this browser only</b> — the
+          shared printer server never sees your label content. That also means they
+          do <b>not</b> follow you to another device, and clearing site data erases
+          them. Export regularly if they matter.
+        </p>
+        <div class="form">
+          <button id="btn-export-data">Export to file…</button>
+          <button id="btn-import-data">Import from file…</button>
+        </div>
+        <p class="hint" id="data-status"></p>
+      </details>
     </section>
 
     <!-- ============ HISTORY ============ -->
@@ -194,6 +209,8 @@
     </div>
   </div>
 
+  <!-- store.js first: app.js uses window.store at boot (designs/history in IndexedDB) -->
+  <script src="/static/store.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ both take the lock.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import platform
@@ -184,7 +185,8 @@ def create_app() -> Flask:
             return jsonify(ok=False, error=str(e)), 502
         ok = st.print_job_error in (None, "NONE")
         remain_after = st.remain
-        entry = _append_history(body, jpeg, st, remain_before=remain_before)
+        # An id only — the design itself goes into the CLIENT's history (IndexedDB).
+        entry = _new_entry_id(jpeg)
         log_event("print.done", "printed", host=s.host, ok=ok,
                   state=st.print_state, remain=st.remain, entry=entry,
                   remain_before=remain_before, remain_after=remain_after)
@@ -205,124 +207,72 @@ def create_app() -> Flask:
     # never touch the server's disk. See specs/central-deployment.md.
 
     # ---- designs (saved display-lists) ----------------------------------------
-    @app.get("/api/designs")
-    def api_list_designs():
-        out = []
-        for d in sorted(runtime.DESIGNS_DIR.glob("*/"), key=lambda p: p.stat().st_mtime,
-                        reverse=True):
-            meta = d / "design.json"
-            if not meta.exists():
-                continue
-            try:
-                dl = json.loads(meta.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            out.append({
-                "id": d.name,
-                "name": dl.get("name", d.name),
-                "mtime": d.stat().st_mtime,
-                "preview": f"/api/designs/{d.name}/preview.png" if (d / "preview.png").exists() else None,
-            })
-        return jsonify(designs=out)
+    # ---- designs & history: REMOVED in v0.8.3 -----------------------------------
+    # Designs and print history are label CONTENT and the printer is now shared, so
+    # they live in the client's browser (static/store.js, IndexedDB) instead of in
+    # ~/.labler/. The old endpoints (/api/designs*, /api/history*) are gone.
+    #
+    # The one exception below is a READ-ONLY, one-shot export so an existing
+    # ~/.labler/ can be pulled into the browser on first load — without it, upgrading
+    # silently loses every saved design. It writes nothing and is safe to call twice.
 
-    @app.get("/api/designs/<did>")
-    def api_get_design(did):
-        path = runtime.DESIGNS_DIR / _slug(did) / "design.json"
-        if not path.exists():
-            abort(404)
-        return jsonify(json.loads(path.read_text(encoding="utf-8")))
-
-    @app.get("/api/designs/<did>/preview.png")
-    def api_design_preview(did):
-        path = runtime.DESIGNS_DIR / _slug(did) / "preview.png"
-        if not path.exists():
-            abort(404)
-        return send_file(path)
-
-    @app.post("/api/designs")
-    def api_save_design():
-        dl = request.get_json(force=True)
-        name = dl.get("name") or "design"
-        did = _slug(dl.get("id") or name)
-        ddir = runtime.DESIGNS_DIR / did
-        ddir.mkdir(parents=True, exist_ok=True)
-        dl["id"] = did
-        (ddir / "design.json").write_text(json.dumps(dl, indent=2), encoding="utf-8")
-        try:
-            png = compose.render_display_list(dict(dl), fmt="PNG")
-            (ddir / "preview.png").write_bytes(png)
-        except (ValueError, OSError):
-            pass
-        # NB: the design NAME is label content and is deliberately not logged —
-        # runtime.LOG_FIELD_ALLOWLIST would drop it anyway. Log the id only.
-        log_event("design.save", "saved design", id=did)
-        return jsonify(ok=True, id=did)
-
-    @app.delete("/api/designs/<did>")
-    def api_delete_design(did):
-        ddir = runtime.DESIGNS_DIR / _slug(did)
-        if not ddir.exists():
-            abort(404)
-        import shutil
-        shutil.rmtree(ddir)
-        log_event("design.delete", "deleted design", id=did)
-        return jsonify(ok=True)
-
-    # ---- history ---------------------------------------------------------------
-    @app.get("/api/history")
-    def api_history():
-        # Backfill orientation/length for entries saved before those fields existed,
-        # using their stored display_list. Cheap; keeps old prints fully shown.
-        items = _read_history()
-        for h in items:
-            # Backfill orientation/estimate for old entries from their display_list.
-            if h.get("orientation") is None and h.get("display_list"):
+    @app.get("/api/migrate/export")
+    def api_migrate_export():
+        """One-shot dump of pre-0.8.3 server-side designs + history for the client
+        to import into IndexedDB. Read-only; the files are left in place so a failed
+        import can be retried."""
+        designs = []
+        if runtime.DESIGNS_DIR.exists():
+            for ddir in sorted(runtime.DESIGNS_DIR.iterdir()):
+                dj = ddir / "design.json"
+                if not dj.is_file():
+                    continue
                 try:
-                    d = compose.measure_display_list(dict(h["display_list"]))
-                    h["est_width_px"] = h.get("est_width_px") or d["width_px"]
-                    h["est_length_px"] = h.get("est_length_px") or d["length_px"]
-                    h.setdefault("est_length_cm", d["length_cm"])
-                    h["orientation"] = _orientation(d["width_px"], d["length_px"])
-                except Exception:
-                    pass
-            # Back-compat: older entries stored length under different keys.
-            if h.get("tape_used_cm") is None and h.get("tape_used_in") is not None:
-                h["tape_used_cm"] = round(h["tape_used_in"] * 2.54, 1)
-            h["thumb"] = f"/api/history/{h['id']}/thumb.png"
-        return jsonify(history=items)
+                    dl = json.loads(dj.read_text(encoding="utf-8"))
+                except (ValueError, OSError):
+                    continue
+                preview = None
+                pj = ddir / "preview.png"
+                if pj.exists():
+                    try:
+                        preview = ("data:image/png;base64,"
+                                   + base64.b64encode(pj.read_bytes()).decode())
+                    except OSError:
+                        preview = None
+                designs.append({
+                    "id": dl.get("id") or ddir.name,
+                    "name": dl.get("name") or ddir.name,
+                    "updated": runtime.now_iso(),
+                    "preview": preview,
+                    "display_list": dl,
+                })
 
-    @app.get("/api/history/<entry>/thumb.png")
-    def api_history_thumb(entry):
-        # Prefer the saved thumbnail; fall back to rendering the stored display_list
-        # for old entries that predate thumbnail saving. Return bytes (not send_file)
-        # so no file handle lingers — on Windows an open handle blocks the later
-        # delete-unlink of the same thumbnail.
-        from flask import Response
-        path = runtime.HISTORY_DIR / f"{Path(entry).name}.png"
-        if path.exists():
-            return Response(path.read_bytes(), mimetype="image/png")
+        history = []
         for h in _read_history():
-            if h.get("id") == entry and h.get("display_list"):
+            thumb = None
+            tp = runtime.HISTORY_DIR / f"{Path(str(h.get('id', ''))).name}.png"
+            if tp.exists():
                 try:
-                    png = compose.render_display_list(
-                        dict(h["display_list"]), fmt="PNG")
-                    from flask import Response
-                    return Response(png, mimetype="image/png")
-                except Exception:
-                    break
-        abort(404)
+                    thumb = ("data:image/png;base64,"
+                             + base64.b64encode(tp.read_bytes()).decode())
+                except OSError:
+                    thumb = None
+            history.append({
+                "id": h.get("id"),
+                "timestamp": h.get("timestamp"),
+                "name": h.get("name", ""),
+                "media_mm": h.get("media_mm", 25),
+                "ok": h.get("ok", True),
+                "remain_before_in": h.get("remain_before_in"),
+                "remain_after_in": h.get("remain_after_in"),
+                "tape_used_in": h.get("tape_used_in"),
+                "thumb": thumb,
+                "display_list": h.get("display_list"),
+            })
 
-    @app.delete("/api/history/<entry>")
-    def api_delete_history(entry):
-        items = [h for h in _read_history() if h.get("id") != entry]
-        _write_history(items)
-        thumb = runtime.HISTORY_DIR / f"{Path(entry).name}.png"
-        try:
-            thumb.unlink(missing_ok=True)
-        except OSError:
-            pass
-        log_event("history.delete", "deleted history entry", id=entry)
-        return jsonify(ok=True)
+        log_event("migrate.export", "served legacy designs/history for client import",
+                  count=len(designs) + len(history))
+        return jsonify(ok=True, designs=designs, history=history)
 
     # ---- settings --------------------------------------------------------------
     @app.get("/api/settings")
@@ -438,7 +388,11 @@ def _free_memory() -> str:
         return "n/a (install psutil for memory stats)"
 
 
-# ---- history file (JSONL) ----------------------------------------------------
+# ---- legacy history file (JSONL) ---------------------------------------------
+# READ-ONLY as of v0.8.3. Nothing appends here any more — print history lives in
+# the client's IndexedDB (static/store.js). This reader exists solely so
+# /api/migrate/export can hand a pre-0.8.3 ~/.labler/history.jsonl to the browser
+# once. _write_history() and _orientation() were removed with the write path.
 def _read_history() -> list[dict]:
     if not runtime.HISTORY_FILE.exists():
         return []
@@ -454,67 +408,25 @@ def _read_history() -> list[dict]:
     return list(reversed(items))  # newest first
 
 
-def _write_history(items: list[dict]) -> None:
-    runtime.ensure_runtime()
-    # items come in newest-first; store oldest-first (append order)
-    lines = [json.dumps(h, default=str) for h in reversed(items)]
-    runtime.HISTORY_FILE.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+def _new_entry_id(jpeg: bytes) -> str:
+    """Stable-ish id for one print, handed to the client so its IndexedDB history
+    entry and the server's stats row can be correlated.
 
-
-def _orientation(width_px: int, length_px: int) -> str:
-    """Portrait = taller than wide (length > across-tape); landscape = wider."""
-    if length_px > width_px:
-        return "portrait"
-    if length_px < width_px:
-        return "landscape"
-    return "square"
-
-
-def _append_history(body: dict, jpeg: bytes, st, *, remain_before=None) -> str:
-    runtime.ensure_runtime()
-    entry_id = hashlib.sha1(jpeg + runtime.now_iso().encode()).hexdigest()[:12]
-    dl = {k: v for k, v in body.items() if k != "src"}
-    # Pixel estimate of the design size (best-effort; the printer's autofit may scale
-    # it differently, so the hardware before/after remain is the authoritative used).
-    try:
-        dims = compose.measure_display_list(dict(dl))
-    except Exception:
-        dims = {}
-    # Save a thumbnail PNG so the History tab can show what was printed.
-    try:
-        (runtime.HISTORY_DIR / f"{entry_id}.png").write_bytes(jpeg)
-    except OSError:
-        pass
-    remain_after = st.remain
-    tape_used_in = (round(remain_before - remain_after, 2)
-                    if remain_before is not None and remain_after is not None else None)
-    rec = {
-        "id": entry_id,
-        "timestamp": runtime.now_iso(),
-        "name": body.get("name", ""),
-        "media_mm": body.get("media_mm", 25),
-        "bytes": len(jpeg),
-        # tape stats (hardware truth)
-        "remain_before_in": remain_before,
-        "remain_after_in": remain_after,
-        "tape_used_in": tape_used_in,
-        "tape_used_cm": round(tape_used_in * 2.54, 1) if tape_used_in is not None else None,
-        "remain_in": remain_after,                     # back-compat alias
-        # pixel estimate of the design (not necessarily what fed out)
-        "est_width_px": dims.get("width_px"),
-        "est_length_px": dims.get("length_px"),
-        "est_length_cm": dims.get("length_cm"),
-        "orientation": _orientation(dims.get("width_px", 0), dims.get("length_px", 0)) if dims else None,
-        "display_list": dl,
-    }
-    with runtime.HISTORY_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, default=str) + "\n")
-    return entry_id
+    NB: the server no longer WRITES a history record. Storing the design would put
+    label content (name, text, bitmaps) on a shared machine — that is exactly what
+    v0.8.3 moved into the browser. Only the id and the tape statistics stay here.
+    """
+    return hashlib.sha1(jpeg + runtime.now_iso().encode()).hexdigest()[:12]
 
 
 def _history_summary() -> tuple[int, str | None]:
-    items = _read_history()
-    return len(items), (items[0]["timestamp"] if items else None)
+    """Print count + last print time for the Device tab, from the STATS stream.
+
+    Previously read history.jsonl; that file is legacy-only now (kept so the
+    one-shot migration export can still find it) and no longer grows.
+    """
+    recs = runtime.read_stats()
+    return len(recs), (recs[-1].get("timestamp") if recs else None)
 
 
 class _LablerRequestHandler:

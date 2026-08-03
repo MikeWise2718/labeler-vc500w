@@ -167,17 +167,20 @@ def test_render_rejects_malformed_data_uri(client):
     assert not r.get_json()["ok"]
 
 
-def test_design_save_list_load_delete(client):
-    dl = {"name": "My Label", "media_mm": 25, "length_px": 80, "elements": [
-        {"type": "border", "thickness": 3}]}
-    sid = client.post("/api/designs", json=dl).get_json()["id"]
-    assert sid == "my-label"
-    listing = client.get("/api/designs").get_json()["designs"]
-    assert any(d["id"] == sid for d in listing)
-    loaded = client.get("/api/designs/" + sid).get_json()
-    assert loaded["name"] == "My Label"
-    assert client.delete("/api/designs/" + sid).get_json()["ok"]
-    assert client.get("/api/designs/" + sid).status_code == 404
+def test_design_endpoints_are_gone(client):
+    """v0.8.3 moved designs into the browser (IndexedDB) — they are label content
+    and the printer is shared. See specs/central-deployment.md."""
+    dl = {"name": "My Label", "media_mm": 25, "length_px": 80, "elements": []}
+    assert client.post("/api/designs", json=dl).status_code == 404
+    assert client.get("/api/designs").status_code == 404
+    assert client.get("/api/designs/my-label").status_code == 404
+    assert client.delete("/api/designs/my-label").status_code == 404
+
+
+def test_history_endpoints_are_gone(client):
+    assert client.get("/api/history").status_code == 404
+    assert client.get("/api/history/abc123/thumb.png").status_code == 404
+    assert client.delete("/api/history/abc123").status_code == 404
 
 
 def test_print_flow_monkeypatched(client, monkeypatch):
@@ -201,40 +204,15 @@ def test_print_flow_monkeypatched(client, monkeypatch):
     # TRUE tape used from the hardware before/after remain delta
     assert r["remain_before"] == 30.0 and r["remain_after"] == 27.5
     assert r["tape_used_in"] == 2.5
-    # history recorded the print, with orientation + tape stats + a thumbnail link
-    hist = client.get("/api/history").get_json()["history"]
-    assert len(hist) == 1
-    h = hist[0]
-    assert h["name"] == "t"
-    assert h["orientation"] == "landscape"     # 312 wide x 80 long -> landscape
-    assert h["tape_used_in"] == 2.5 and h["tape_used_cm"] is not None
-    assert h["remain_before_in"] == 30.0 and h["remain_after_in"] == 27.5
-    assert h["thumb"] == f"/api/history/{h['id']}/thumb.png"
-    # thumbnail is served
-    thumb = client.get(h["thumb"])
-    assert thumb.status_code == 200 and thumb.mimetype == "image/png"
-    # delete removes the entry (and its thumbnail)
-    assert client.delete("/api/history/" + h["id"]).get_json()["ok"]
-    assert client.get("/api/history").get_json()["history"] == []
-    assert client.get(h["thumb"]).status_code == 404
-
-
-def test_history_thumb_fallback_for_old_entry(client):
-    # An entry written before thumbnails existed (no PNG file) still renders a
-    # thumbnail from its stored display_list.
-    import json as _json
-    runtime.ensure_runtime()
-    rec = {"id": "oldentry1234", "timestamp": "2026-06-10T00:00:00+00:00", "name": "old",
-           "media_mm": 25, "bytes": 100,
-           "display_list": {"media_mm": 25, "length_px": 80,
-                            "elements": [{"type": "border", "thickness": 2}]}}
-    runtime.HISTORY_FILE.write_text(_json.dumps(rec) + "\n", encoding="utf-8")
-    # listing backfills orientation
-    h = client.get("/api/history").get_json()["history"][0]
-    assert h["orientation"] in ("portrait", "landscape", "square")
-    # thumbnail falls back to rendering the display_list
-    thumb = client.get("/api/history/oldentry1234/thumb.png")
-    assert thumb.status_code == 200 and thumb.mimetype == "image/png"
+    # the response carries an entry id for the CLIENT to key its own history on
+    assert r["entry"] and isinstance(r["entry"], str)
+    # ...but the server wrote NO history record and NO thumbnail: that is label
+    # content, and the printer is shared (specs/central-deployment.md).
+    assert not runtime.HISTORY_FILE.exists(), "server must not write history.jsonl"
+    assert list(runtime.HISTORY_DIR.glob("*.png")) == [], "server must not write thumbnails"
+    # what it DID write is the statistics row
+    stats = client.get("/api/stats").get_json()
+    assert stats["prints"] == 1 and stats["tape_used_in"] == 2.5
 
 
 def test_status_endpoint_monkeypatched(client, monkeypatch):
@@ -290,3 +268,50 @@ def test_stats_endpoint_after_print(client, monkeypatch):
     # the shared stats view must not carry the label's text or name
     blob = json.dumps(s)
     assert "CONFIDENTIAL-TEXT" not in blob and "Secret Label Name" not in blob
+
+
+def test_migrate_export_returns_legacy_designs_and_history(client):
+    """Upgrading must not silently lose saved designs. The one-shot export hands
+    a pre-0.8.3 ~/.labler/ to the browser for import into IndexedDB."""
+    runtime.ensure_runtime()
+    # a legacy saved design, as v0.7.x wrote it
+    ddir = runtime.DESIGNS_DIR / "my-label"
+    ddir.mkdir(parents=True, exist_ok=True)
+    (ddir / "design.json").write_text(json.dumps(
+        {"id": "my-label", "name": "My Label", "media_mm": 25,
+         "elements": [{"type": "text", "text": "hello"}]}), encoding="utf-8")
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), "red").save(buf, "PNG")
+    (ddir / "preview.png").write_bytes(buf.getvalue())
+    # a legacy history entry + thumbnail
+    runtime.HISTORY_FILE.write_text(json.dumps(
+        {"id": "abc123", "timestamp": "2026-06-10T00:00:00+00:00", "name": "old print",
+         "media_mm": 25, "tape_used_in": 1.5,
+         "display_list": {"media_mm": 25, "elements": []}}) + "\n", encoding="utf-8")
+    (runtime.HISTORY_DIR / "abc123.png").write_bytes(buf.getvalue())
+
+    r = client.get("/api/migrate/export").get_json()
+    assert r["ok"]
+    d = next(x for x in r["designs"] if x["id"] == "my-label")
+    assert d["name"] == "My Label"
+    assert d["display_list"]["elements"][0]["text"] == "hello"
+    assert d["preview"].startswith("data:image/png;base64,")
+    h = next(x for x in r["history"] if x["id"] == "abc123")
+    assert h["tape_used_in"] == 1.5
+    assert h["thumb"].startswith("data:image/png;base64,")
+
+
+def test_migrate_export_is_read_only(client):
+    """The export must leave the files in place so a failed import can be retried."""
+    runtime.ensure_runtime()
+    ddir = runtime.DESIGNS_DIR / "keepme"
+    ddir.mkdir(parents=True, exist_ok=True)
+    (ddir / "design.json").write_text(json.dumps({"id": "keepme", "name": "Keep"}),
+                                      encoding="utf-8")
+    client.get("/api/migrate/export")
+    assert (ddir / "design.json").exists()
+
+
+def test_migrate_export_empty_runtime_is_ok(client):
+    r = client.get("/api/migrate/export").get_json()
+    assert r["ok"] and r["designs"] == [] and r["history"] == []

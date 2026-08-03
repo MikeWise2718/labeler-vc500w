@@ -11,6 +11,9 @@ dist/
 .env
 *.local
 
+# JS test harness (dev-only; package.json + package-lock.json ARE tracked)
+node_modules/
+
 # Generated test artifacts
 tools/colortest.jpg
 

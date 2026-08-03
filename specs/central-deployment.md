@@ -276,12 +276,12 @@ without a DOM.
 
 | # | Task | Version | Status |
 |---|---|---|---|
-| A1 | Statistics-only `log_event` allowlist + tests | 0.8.0 | Not started |
-| A2 | Data-URI assets; remove `/api/assets` + `_resolve_assets` | 0.8.1 | Not started |
-| A3 | `stats.jsonl` + `/api/stats` | 0.8.2 | Not started |
-| B1 | IndexedDB storage layer | 0.8.3 | Not started |
-| B2 | Cut over history + designs; migration import | 0.8.4 | Not started |
-| B3 | Export / import JSON | 0.8.5 | Not started |
+| A1 | Statistics-only `log_event` allowlist + tests | 0.8.0 | **Done** |
+| A2 | Data-URI assets; remove `/api/assets` + `_resolve_assets` | 0.8.1 | **Done** |
+| A3 | `stats.jsonl` + `/api/stats` | 0.8.2 | **Done** |
+| B1 | IndexedDB storage layer | 0.8.3 | **Done** |
+| B2 | Cut over history + designs; migration import | 0.8.4 | **Done** |
+| B3 | Export / import JSON | 0.8.5 | **Done** |
 | C1 | Print queue + position feedback | 0.8.6 | Not started |
 | C2 | Shelly power-cycle + wedge detection | 0.8.7 | Not started |
 | 🔧 | **Move the printer** (physical) | — | Not started |
