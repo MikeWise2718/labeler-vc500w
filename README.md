@@ -4,9 +4,10 @@ A program to print labels **directly** to a Brother **VC-500W** ZINK (Zero-Ink) 
 label printer over the network — bypassing Brother's official desktop/mobile software, which is
 clunky and gets in the way for quick, scriptable label printing.
 
-> **Status:** Working (v0.7.5). A `rich` CLI **and** a Flask web label designer, both printing to our
+> **Status:** Working (v0.9.0). A `rich` CLI **and** a Flask web label designer, both printing to our
 > VC-500W over the LAN. The full wire protocol (status read + print write) is verified against our
-> firmware on hardware. MIT-licensed, built from scratch — see [License](#license).
+> firmware on hardware. Deployed as a **shared, multi-person service** — see
+> [Shared deployment](#shared-deployment). MIT-licensed, built from scratch — see [License](#license).
 
 ---
 
@@ -28,14 +29,46 @@ uv run labler-web            # or run.bat   →  http://localhost:5000
 The web app is the richer surface and opens on the **Edit** tab: a display-list editor (text / image
 / border elements), drag & resize, click-to-select on the canvas, whole-label rotate, per-design
 **background color**, color preset swatches, **multiline** text, **bold/italic** text, and
-**Ctrl+V to paste a bitmap** straight onto the label (it's saved to `~/.labler/assets/`). A live
-preview is byte-identical to what feeds out of the printer; designs save to disk, and every print is
-logged to History with a thumbnail and real hardware tape-used stats.
+**Ctrl+V to paste a bitmap** straight onto the label. A live preview is byte-identical to what feeds
+out of the printer, and every print is logged to History with a thumbnail and real hardware
+tape-used stats.
 
-**Code vs. runtime split:** code lives in this repo; all mutable state lives under `~/.labler/`
-(Windows `%USERPROFILE%\.labler\`) — `settings.json`, `logs/events.jsonl`, uploaded `assets/`, saved
-`designs/<id>/`, `history.jsonl` + per-print thumbnails. `.venv` rebuilds and re-clones never lose
-state. The web app's settings are separate from the CLI's `~/.config/labler/config.json`.
+---
+
+## Shared deployment
+
+The printer is a **shared resource**: it sits in the basement next to `munchlax`, which runs the one
+`labler-web` instance that everybody points a browser at. This is not merely convenient — the
+VC-500W accepts **exactly one TCP connection on :9100 at a time**, and a client that dies mid-job
+wedges it until someone power-cycles it. Exactly one process may own the printer.
+
+```bash
+tools/deploy.sh                 # rsync + uv sync + restart + verify the shipped version
+tools/munchlax/install.sh       # run once ON munchlax to install the launchd agent
+```
+
+**Your label content stays on your machine.** The server never stores what you print:
+
+| Data | Where it lives |
+|---|---|
+| Your designs, print history, thumbnails | **your browser** (IndexedDB) |
+| Images you paste or upload | **inlined into the design**, decoded in memory, never written to the server |
+| Tape statistics (used, remaining, when) | the server — shared, so everyone can see when the roll needs replacing |
+| Printer settings (host, media, cut) | the server — they describe the shared printer |
+
+The tradeoff: history is per-**browser**. Your phone and your laptop keep separate histories, and
+clearing site data erases them — so **Settings → Export** writes a JSON backup of your designs and
+history. Import restores it on another machine.
+
+Two more shared-printer conveniences: the Print button tells you when **someone else is printing**
+instead of hanging silently, and if the printer wedges, **Device → Power-cycle** restarts it through
+a Shelly smart outlet (configure it in Settings; blank = disabled) rather than requiring a trip to
+the basement.
+
+**Code vs. runtime split:** code lives in this repo; server-side state lives under `~/.labler/`
+(Windows `%USERPROFILE%\.labler\`) — `settings.json`, `logs/events.jsonl`, `stats.jsonl`. `.venv`
+rebuilds and re-clones never lose it. The web app's settings are separate from the CLI's
+`~/.config/labler/config.json`.
 
 ---
 
@@ -146,12 +179,18 @@ src/labler/
   status.py       parse the status.xml reply
   config.py       media table (widths → px), host defaults
   cli.py          `labler` CLI (status / print-image / print-text / print-qr)
+  power.py        Shelly outlet power-cycle + wedge fingerprint (remote recovery)
   web/
-    app.py        Flask factory + JSON API (/api/render, /print, /designs, /history, /fonts, …)
-    runtime.py    ~/.labler/ layout, WebSettings, JSONL event log
-    static/, templates/   vanilla-JS SPA + dark theme (no build step)
-tests/            pytest (protocol / render / compose / web / status) — 64 tests
-specs/            design docs (flask-app.md, design.md, tasks.md)
+    app.py        Flask factory + JSON API (/api/render, /print, /queue, /stats, /fonts, …)
+                  plus _PrintQueue: serializes the printer, reports queue position
+    runtime.py    ~/.labler/ layout, WebSettings, allowlisted event log, stats stream
+    static/app.js   vanilla-JS SPA (no build step)
+    static/store.js client-side designs + history (IndexedDB), export/import, migration
+    templates/    dark-theme SPA shell
+tests/            pytest — 140 tests (protocol / render / compose / web / status /
+                  privacy / queue / power) + test_store.mjs (16, real IndexedDB)
+tools/            deploy.sh, munchlax/ (launchd agent), run-js-tests.sh
+specs/            design docs (central-deployment.md, flask-app.md, design.md, tasks.md)
 docs/             LED indications, vendor PDFs
 ```
 

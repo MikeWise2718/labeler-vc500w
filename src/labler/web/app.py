@@ -637,6 +637,12 @@ def main() -> None:
         port=args.port,
         debug=args.debug,
         request_handler=_make_request_handler(),
+        # threaded=True is REQUIRED for the shared deployment: a print holds the
+        # request for 10-20 s, and single-threaded werkzeug would block everyone
+        # else's status polls (and their queue-position checks) behind it — the
+        # printer would look dead to everyone but the person printing.
+        # Concurrency is safe: all printer access is serialized by _print_queue.
+        threaded=True,
     )
 
 

@@ -1,6 +1,6 @@
 # Central deployment — multi-person shared printer
 
-**Status:** draft, not started
+**Status:** software complete (v0.9.0) — awaiting the physical printer move
 **Created:** 2026-08-03
 **Supersedes nothing.** Builds on `specs/flask-app.md` (single-user web app, v0.7.5).
 
@@ -285,6 +285,6 @@ without a DOM.
 | C1 | Print queue + position feedback | 0.8.6 | **Done** |
 | C2 | Shelly power-cycle + wedge detection | 0.8.7 | **Done** |
 | 🔧 | **Move the printer** (physical) | — | Not started |
-| D1 | `tools/deploy.sh` | 0.9.0 | Not started |
-| D2 | launchd plist | 0.9.0 | Not started |
-| D3 | Docs pass | 0.9.0 | Not started |
+| D1 | `tools/deploy.sh` | 0.9.0 | **Done** |
+| D2 | launchd plist + install.sh | 0.9.0 | **Done** |
+| D3 | Docs pass | 0.9.0 | **Done** |

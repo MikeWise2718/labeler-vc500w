@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent for the shared VC-500W label server on munchlax.
+
+  Install (see tools/munchlax/install.sh, which does this for you):
+    cp tools/munchlax/com.labler.web.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.labler.web.plist
+  Restart:
+    launchctl kickstart -k gui/$(id -u)/com.labler.web
+
+  NOTE: replace __HOME__ with the real home directory — launchd does not expand
+  ~ or $HOME in these paths. install.sh substitutes it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.labler.web</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>--extra</string>
+        <string>web</string>
+        <string>labler-web</string>
+        <!-- 0.0.0.0 so the other machines in the house can reach it; this is the
+             whole point of the central deployment. -->
+        <string>--bind</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>5000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__HOME__/projects/labler-vc5002</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Keep it up: the printer server should be available whenever someone wants
+         to print, without anyone having to ssh in and start it. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Back off rather than spinning if it crashes on startup (e.g. bad deps). -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.labler/logs/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.labler/logs/stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

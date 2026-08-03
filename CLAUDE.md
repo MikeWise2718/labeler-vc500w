@@ -5,13 +5,16 @@ A program to print labels **directly** to a Brother **VC-500W** ZINK full-color 
 the LAN, replacing Brother's clunky official software. This is a subproject of the `D:\hw` home
 network workspace.
 
-**Current state (v0.7.5):** working CLI **and** a Flask web label designer, both printing to our
+**Current state (v0.9.0):** working CLI **and** a Flask web label designer, both printing to our
 firmware (status read + print write verified on hardware). The verified core
 (`protocol`/`render`/`compose`/`status`/`config`) is shared by both. The web app
 (`src/labler/web/`) is a **6-tab** UI — **Edit / Print / Device / History / Settings / About** — over
 a display-list editor. Run with `uv run labler-web` (or `run.bat`) → http://localhost:5000; **the app
 opens on the Edit tab** (you land to design, not to print). See `specs/flask-app.md` for the design
 and `README.md` for the printer/protocol background.
+
+As of v0.8.x the app is a **shared, multi-person service** deployed to munchlax — see
+**SHARED DEPLOYMENT** below before changing anything about storage or logging.
 
 Editor capabilities (Edit tab): stacked display-list of **text / image / border** elements; drag to
 move, corner-handle resize, **click an element on the canvas to select it**; whole-label rotate
@@ -27,19 +30,56 @@ every print is logged to History with a thumbnail and hardware tape-used stats.
 CLI surface (`labler ...`): `status`, `print-image`, `print-text`, `print-qr` (rich/rich-argparse,
 short flags). Web entry point `labler-web`; CLI entry point `labler`.
 
+### SHARED DEPLOYMENT (v0.8.x) — read this before touching storage or logging
+The printer is a **shared, multi-person resource** living in the basement next to
+**munchlax**, which runs the single `labler-web` that owns :9100. Full design +
+task tracker: **`specs/central-deployment.md`**.
+
+**The privacy rule is absolute: label content NEVER reaches the server.**
+
+| Data | Lives | Notes |
+|---|---|---|
+| Designs, print history, thumbnails | **client browser (IndexedDB)** | `static/store.js` |
+| Uploaded/pasted bitmaps | **inlined as data URIs** in the display list | decoded in-memory per render, never written |
+| Tape statistics | **server** `~/.labler/stats.jsonl` | the one dataset meant to be shared |
+| Settings | **server**, shared by everyone | properties of the printer, not of a person |
+
+Enforcement (do not weaken any of these):
+- `runtime.LOG_FIELD_ALLOWLIST` — an **allowlist**; anything not named is dropped
+  before it hits disk. `message` is positional so it bypasses the filter and is
+  capped at `MAX_MESSAGE_LEN` (exception strings can quote label text).
+- `runtime.STATS_FIELDS` — a **closed schema**; `record_print_stats()` is
+  keyword-only so content cannot slide in.
+- `/api/assets`, `/api/designs*`, `/api/history*` are **gone**, and so is the
+  history *write* path. `_read_history()` survives read-only, solely to feed the
+  one-shot `/api/migrate/export` that pulls a pre-0.8.3 `~/.labler/` into a
+  browser (without it, upgrading silently loses saved designs).
+- `tests/test_privacy.py` fails if any of this regresses.
+
+**Accepted tradeoff:** history is per-*browser*, not per-person — a phone and a
+desktop keep separate histories, and clearing site data wipes them. Settings →
+Export mitigates it. If this becomes annoying, the fallback is per-user server
+directories behind a login (private between people, not from munchlax's admin);
+do not build it pre-emptively.
+
 ### Web app runtime data (code/runtime split)
 - **Code** lives in this repo. **Runtime data** lives under `~/.labler/` (Windows
-  `%USERPROFILE%\.labler\`), created on first run: `settings.json`, `logs/events.jsonl`,
-  `assets/` (uploaded bitmaps), `designs/<id>/` (saved display-lists + previews),
-  `history.jsonl` (print log) + `history/<id>.png` (per-print thumbnails). `.venv`
-  rebuilds / re-clones never lose this state.
+  `%USERPROFILE%\.labler\`), created on first run: `settings.json`,
+  `logs/events.jsonl`, `stats.jsonl`. `.venv` rebuilds / re-clones never lose it.
+  (`designs/`, `history.jsonl`, `history/`, `assets/` are **legacy** — pre-0.8.3
+  leftovers kept only for the migration export.)
 - The web app's `~/.labler/settings.json` is the app authority and is SEPARATE from the CLI's
   `~/.config/labler/config.json`. Web default host is the IPv4 `192.168.25.219` (the mDNS name
   resolved to IPv6 this session and refused :9100).
-- Printer access is serialized with a module-level lock (VC-500W = one :9100 connection at a time),
-  so two browser tabs can't collide. The print path is the same verified `protocol.print_jpeg`.
-- `settings.json` includes `custom_colors` (user-added swatch presets) alongside host/media/mode/cut/
-  font/background/units. Settings are the app authority and persist server-side.
+- Printer access is serialized by `_PrintQueue` around a module-level lock (VC-500W = one
+  :9100 connection at a time), so browser tabs — and now *people* — can't collide. The
+  queue also reports position so a waiting browser says "someone else is printing"
+  instead of hanging. The print path is the same verified `protocol.print_jpeg`.
+- The server MUST run `threaded=True`: a print holds its request for 10–20 s, and a
+  single-threaded server would block everyone else's status polls behind it.
+- `settings.json` includes `custom_colors` (swatch presets) and `shelly_host`/`shelly_outlet`
+  (remote power-cycle; blank host = disabled) alongside host/media/mode/cut/font/
+  background/units.
 
 ### Fonts (bold / italic)
 - Text style is modelled as a **font family + bold/italic flags**, NOT raw `.ttf` filenames.
@@ -167,8 +207,36 @@ MIT.
   web header shows the live build, which makes "is my browser seeing the new code?" answerable in two
   seconds. (See the stale-JS lesson below — the header version comes from `/api/ping`, NOT from the
   served `app.js`, so a matching header does NOT prove the JS is fresh.)
-- Tracked: `CLAUDE.md`, `README.md`, `specs/`, `docs/`, `tests/`, `tools/`, `run.bat`. `.gitignore`
-  excludes `.venv/`, `__pycache__/`, `misc/` (scratch test images — see lesson below).
+- Tracked: `CLAUDE.md`, `README.md`, `specs/`, `docs/`, `tests/`, `tools/`, `run.bat`,
+  `package.json` (JS test harness). `.gitignore` excludes `.venv/`, `__pycache__/`,
+  `node_modules/`, `misc/` (scratch test images — see lesson below).
+
+## Testing
+Two suites — **run both**; the Python one never touches browser JS (lesson #6):
+
+```
+.venv/Scripts/python.exe -m pytest       # 140 tests   (use this form if a server is up)
+tools/run-js-tests.sh                    # 16 tests + syntax checks
+```
+
+- `tests/test_privacy.py` — the shared-printer privacy guarantees. If you are changing
+  logging or storage and this goes red, you have re-opened a leak.
+- `tests/test_queue.py` — printer serialization, with **real threads**. A queue bug is a
+  concurrency bug; a single-threaded test will not see it.
+- `tests/test_power.py` — wedge fingerprint + power-cycle safety rails. No real outlet is
+  ever touched.
+- `tests/test_store.mjs` — `static/store.js` against a **real IndexedDB** (fake-indexeddb).
+  This is the layer where a bug silently eats someone's saved designs, so it is tested
+  properly rather than eyeballed. Needs `npm install` once.
+
+## Deployment (munchlax)
+```
+tools/deploy.sh                       # rsync + uv sync + launchd restart + version check
+tools/munchlax/install.sh             # run ON munchlax, once, to install the agent
+```
+`deploy.sh` verifies that `/api/ping` reports the version it just shipped — "something
+answered" is not proof the new code is live. Runtime data (`~/.labler/`) is never touched
+by a deploy.
 
 ## Lessons learned (web app)
 Hard-won, to stop re-paying for them:
@@ -219,7 +287,22 @@ Hard-won, to stop re-paying for them:
    until a render actually loads (`setImgSrc` adds `.loaded` on `img.onload`), so an unset/failed src
    shows nothing rather than the broken glyph.
 
-9. **A running `labler-web` locks `.venv/Scripts/labler-web.exe`, so `uv run` can't reinstall.** If a
+9. **Removing an endpoint is not the same as removing the data path.** When designs and
+   history moved to the browser (v0.8.3), deleting `/api/history*` looked like the job was
+   done — but `_append_history()` was still writing `name` + `display_list` to
+   `~/.labler/history.jsonl` on **every print**. The leak was invisible because nothing
+   *served* it. When relocating data for privacy, grep for the **writers**, not just the
+   readers, and assert the file is absent in a test (`test_print_flow_monkeypatched`).
+
+10. **A stale `labler-web` from an earlier session will masquerade as a bug in your new
+    code.** Chasing a "migration doesn't run" failure cost several turns: every endpoint
+    including `/api/ping` was hanging, and the cause was two orphaned server processes
+    (one from a *previous session*) fighting over :5000. **Symptom: `curl` hangs on
+    endpoints that have no reason to be slow → check for duplicate processes FIRST**
+    (`Get-CimInstance Win32_Process | Where CommandLine -like '*labler*'`). Related to
+    lesson #11 below — always kill your test server when done.
+
+11. **A running `labler-web` locks `.venv/Scripts/labler-web.exe`, so `uv run` can't reinstall.** If a
    background/dev server is up when you next `run.bat` (or `uv run labler-web`), the version-bumped
    package fails to install with `os error 32` (file in use). Kill the stray server first
    (`Get-CimInstance Win32_Process ... CommandLine -like '*labler-web*'` → `Stop-Process`). When
