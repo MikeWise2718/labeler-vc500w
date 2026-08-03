@@ -119,7 +119,7 @@ def create_app() -> Flask:
         'what you see is what feeds out'. Orientation: 25mm tape width = image width
         (312px), length = image height. No separate view rotation.
         """
-        dl = _resolve_assets(request.get_json(force=True))
+        dl = request.get_json(force=True)
         try:
             png = compose.render_display_list(dl, fmt="PNG")
             dims = compose.measure_display_list(dl)
@@ -142,7 +142,7 @@ def create_app() -> Flask:
     @app.post("/api/measure")
     def api_measure():
         """Body = display-list -> physical dimensions (px/mm/cm/in) without rendering."""
-        dl = _resolve_assets(request.get_json(force=True))
+        dl = request.get_json(force=True)
         try:
             return jsonify(ok=True, **compose.measure_display_list(dl))
         except Exception as e:
@@ -151,7 +151,7 @@ def create_app() -> Flask:
     @app.post("/api/print")
     def api_print():
         body = request.get_json(force=True)
-        dl = _resolve_assets(body)
+        dl = body
         s = _settings()
         try:
             jpeg = compose.render_display_list(dl, fmt="JPEG")
@@ -185,34 +185,11 @@ def create_app() -> Flask:
         return jsonify(ok=ok, entry=entry, remain_before=remain_before,
                        remain_after=remain_after, tape_used_in=used, **_status_dict(st))
 
-    # ---- assets (uploaded bitmaps) --------------------------------------------
-    @app.post("/api/assets")
-    def api_upload_asset():
-        if "file" not in request.files:
-            return jsonify(ok=False, error="no file field"), 400
-        f = request.files["file"]
-        data = f.read()
-        if not data:
-            return jsonify(ok=False, error="empty file"), 400
-        ext = (Path(f.filename or "").suffix or ".png").lower()
-        if ext not in (".png", ".jpg", ".jpeg", ".gif", ".bmp"):
-            return jsonify(ok=False, error=f"unsupported type {ext}"), 400
-        aid = hashlib.sha1(data).hexdigest()[:16] + ext
-        path = runtime.ASSETS_DIR / aid
-        runtime.ensure_runtime()
-        path.write_bytes(data)
-        from PIL import Image
-        with Image.open(path) as im:
-            w, h = im.size
-        log_event("asset.upload", "uploaded asset", id=aid, w=w, h=h)
-        return jsonify(ok=True, id=aid, w=w, h=h)
-
-    @app.get("/api/assets/<aid>")
-    def api_get_asset(aid):
-        path = runtime.ASSETS_DIR / Path(aid).name
-        if not path.exists():
-            abort(404)
-        return send_file(path)
+    # ---- assets --------------------------------------------------------------
+    # REMOVED in v0.8.1. Bitmaps used to be POSTed here and stored under
+    # ~/.labler/assets/, but an uploaded bitmap IS label content and the printer is
+    # now shared. Images are inlined into the display list as data URIs instead and
+    # never touch the server's disk. See specs/central-deployment.md.
 
     # ---- designs (saved display-lists) ----------------------------------------
     @app.get("/api/designs")
@@ -259,7 +236,7 @@ def create_app() -> Flask:
         dl["id"] = did
         (ddir / "design.json").write_text(json.dumps(dl, indent=2), encoding="utf-8")
         try:
-            png = compose.render_display_list(_resolve_assets(dict(dl)), fmt="PNG")
+            png = compose.render_display_list(dict(dl), fmt="PNG")
             (ddir / "preview.png").write_bytes(png)
         except (ValueError, OSError):
             pass
@@ -288,7 +265,7 @@ def create_app() -> Flask:
             # Backfill orientation/estimate for old entries from their display_list.
             if h.get("orientation") is None and h.get("display_list"):
                 try:
-                    d = compose.measure_display_list(_resolve_assets(dict(h["display_list"])))
+                    d = compose.measure_display_list(dict(h["display_list"]))
                     h["est_width_px"] = h.get("est_width_px") or d["width_px"]
                     h["est_length_px"] = h.get("est_length_px") or d["length_px"]
                     h.setdefault("est_length_cm", d["length_cm"])
@@ -315,7 +292,7 @@ def create_app() -> Flask:
             if h.get("id") == entry and h.get("display_list"):
                 try:
                     png = compose.render_display_list(
-                        _resolve_assets(dict(h["display_list"])), fmt="PNG")
+                        dict(h["display_list"]), fmt="PNG")
                     from flask import Response
                     return Response(png, mimetype="image/png")
                 except Exception:
@@ -390,15 +367,9 @@ def _status_dict(st) -> dict:
     }
 
 
-def _resolve_assets(dl: dict) -> dict:
-    """Replace each image element's `src_id` with a real asset Path before render."""
-    from PIL import Image  # noqa: F401  (Image used indirectly by compose)
-    for el in dl.get("elements", []):
-        if el.get("type") == "image" and el.get("src_id"):
-            p = runtime.ASSETS_DIR / Path(el["src_id"]).name
-            if p.exists():
-                el["src"] = str(p)
-    return dl
+# _resolve_assets() was REMOVED in v0.8.1 along with /api/assets. Image elements now
+# carry their own `src` data URI, which compose._resolve_image decodes directly, so
+# there is nothing server-side to resolve. See specs/central-deployment.md.
 
 
 def _available_fonts() -> list[dict]:
@@ -481,7 +452,7 @@ def _append_history(body: dict, jpeg: bytes, st, *, remain_before=None) -> str:
     # Pixel estimate of the design size (best-effort; the printer's autofit may scale
     # it differently, so the hardware before/after remain is the authoritative used).
     try:
-        dims = compose.measure_display_list(_resolve_assets(dict(dl)))
+        dims = compose.measure_display_list(dict(dl))
     except Exception:
         dims = {}
     # Save a thumbnail PNG so the History tab can show what was printed.

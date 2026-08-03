@@ -22,7 +22,7 @@ Display-list schema (JSON)
   "background": "white",             # canvas fill
   "elements": [                      # rendered in ascending z (ties: list order)
     {"type": "image",  "x":0,"y":0,"w":312,"h":200,"rotate":0,"z":0,
-     "src": <PIL.Image|path>, "fit": "contain"},
+     "src": <PIL.Image|path|"data:image/png;base64,...">, "fit": "contain"},
     {"type": "text",   "x":10,"y":210,"w":292,"h":80,"rotate":0,"z":1,
      "text": "Hi", "font": null, "font_size": 48, "color": "black", "align": "left"},
     {"type": "border", "z":99, "color": "black", "thickness": 4}   # whole-label frame
@@ -36,6 +36,10 @@ so a typo never silently prints a blank label.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import io
+
 from PIL import Image, ImageDraw
 
 from .config import media_for
@@ -47,8 +51,41 @@ _MIN_LENGTH_PX = 1
 _AUTO_MARGIN_PX = 8
 
 
+# Cap on a single inlined bitmap, pre-decode. Data URIs travel in the display list
+# on every render/preview call, so a huge paste would be re-sent on every keystroke.
+# 8 MB of base64 is ~6 MB of image — far above anything a 312 px-wide label needs.
+MAX_DATA_URI_BYTES = 8 * 1024 * 1024
+
+_DATA_URI_PREFIX = "data:"
+
+
+def _decode_data_uri(src: str) -> io.BytesIO:
+    """Decode a `data:image/png;base64,...` URI to a file-like object.
+
+    Label bitmaps are inlined as data URIs rather than uploaded, so that image
+    content never lands on the shared server (specs/central-deployment.md).
+    """
+    header, _, payload = src.partition(",")
+    if not payload:
+        raise ValueError("malformed data URI: no payload")
+    if ";base64" not in header:
+        raise ValueError("data URI must be base64-encoded")
+    if len(payload) > MAX_DATA_URI_BYTES:
+        raise ValueError(
+            f"inlined image too large: {len(payload)} bytes > {MAX_DATA_URI_BYTES}")
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise ValueError(f"malformed data URI: {e}") from e
+    if not raw:
+        raise ValueError("malformed data URI: empty payload")
+    return io.BytesIO(raw)
+
+
 def _resolve_image(src) -> Image.Image:
-    """An element's `src` may be a PIL image or a path/file — normalise to RGBA."""
+    """An element's `src` may be a PIL image, a data URI, or a path/file — to RGBA."""
+    if isinstance(src, str) and src.startswith(_DATA_URI_PREFIX):
+        src = _decode_data_uri(src)
     img = src if isinstance(src, Image.Image) else Image.open(src)
     return img.convert("RGBA")
 

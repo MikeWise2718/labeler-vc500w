@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 
 import pytest
@@ -183,3 +184,64 @@ def test_jpeg_output_is_decodable_and_rgb():
     img = _decode(compose.render_display_list(dl, fmt="JPEG"))
     assert img.format == "JPEG"
     assert img.mode == "RGB"
+
+
+# ---- inlined images (data URIs) --------------------------------------------
+# Bitmaps are inlined rather than uploaded so that label content never reaches
+# the shared server (specs/central-deployment.md). compose decodes them per render.
+
+def _png_data_uri(w=20, h=10, color="red") -> str:
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), color).save(buf, "PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def test_data_uri_decodes_to_image():
+    img = compose._resolve_image(_png_data_uri(20, 10))
+    assert img.size == (20, 10)
+    assert img.mode == "RGBA"
+
+
+def test_data_uri_renders_same_as_file_path(tmp_path):
+    """A data URI and the identical bitmap on disk must produce the same label.
+
+    This is the guarantee that removing /api/assets changed nothing visually.
+    """
+    p = tmp_path / "x.png"
+    Image.new("RGB", (20, 10), "red").save(p, "PNG")
+    box = {"type": "image", "x": 0, "y": 0, "w": 40, "h": 20, "fit": "contain"}
+    from_path = compose.render_display_list(
+        {"media_mm": 25, "length_px": 60, "elements": [{**box, "src": str(p)}]}, fmt="PNG")
+    from_uri = compose.render_display_list(
+        {"media_mm": 25, "length_px": 60, "elements": [{**box, "src": _png_data_uri(20, 10)}]},
+        fmt="PNG")
+    assert from_path == from_uri
+
+
+@pytest.mark.parametrize("bad", [
+    "data:image/png;base64,",                 # no payload
+    "data:image/png;base64,!!!!",             # not base64
+    "data:image/png,rawnotbase64",            # missing ;base64
+    "data:image/png;base64,QQ==",             # valid base64, not an image
+])
+def test_malformed_data_uri_raises(bad):
+    with pytest.raises(Exception):
+        compose._resolve_image(bad)
+
+
+def test_oversized_data_uri_rejected():
+    payload = "A" * (compose.MAX_DATA_URI_BYTES + 1)
+    with pytest.raises(ValueError, match="too large"):
+        compose._resolve_image("data:image/png;base64," + payload)
+
+
+def test_plain_path_still_works(tmp_path):
+    """Back-compat: a filesystem path is still a valid src (used by the CLI)."""
+    p = tmp_path / "y.png"
+    Image.new("RGB", (8, 8), "blue").save(p, "PNG")
+    assert compose._resolve_image(str(p)).size == (8, 8)
+
+
+def test_pil_image_still_works():
+    im = Image.new("RGB", (6, 6), "green")
+    assert compose._resolve_image(im).size == (6, 6)

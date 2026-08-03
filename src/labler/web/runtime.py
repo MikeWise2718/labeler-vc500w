@@ -5,10 +5,13 @@ code/runtime split rule:
 
     ~/.labler/
       settings.json        # server-side app settings
-      logs/events.jsonl    # structured event log
-      assets/              # uploaded source bitmaps (content-addressed)
+      logs/events.jsonl    # structured event log (STATISTICS ONLY — see log_event)
       designs/<id>/        # saved display-lists + preview thumbnails
       history.jsonl        # append-only print log
+
+The printer is SHARED between people, so label content must not accumulate here.
+Bitmaps are inlined as data URIs by the client and never stored server-side; the
+event log is allowlist-filtered. See specs/central-deployment.md.
 
 The directory is created on first access. Settings here are the web app's
 authority and are a superset of the CLI's ~/.config/labler/config.json.
@@ -27,7 +30,10 @@ RUNTIME_DIR = Path.home() / ".labler"
 SETTINGS_FILE = RUNTIME_DIR / "settings.json"
 LOG_DIR = RUNTIME_DIR / "logs"
 EVENTS_FILE = LOG_DIR / "events.jsonl"
-ASSETS_DIR = RUNTIME_DIR / "assets"
+# ASSETS_DIR was removed in v0.8.1 — uploaded bitmaps are label content and the
+# printer is now shared, so images are inlined as data URIs instead of stored here.
+# An existing ~/.labler/assets/ from an older version is left alone (not deleted);
+# it is dead data the user can remove at leisure.
 DESIGNS_DIR = RUNTIME_DIR / "designs"
 HISTORY_FILE = RUNTIME_DIR / "history.jsonl"
 HISTORY_DIR = RUNTIME_DIR / "history"       # per-print thumbnails: <entry_id>.png
@@ -35,7 +41,7 @@ HISTORY_DIR = RUNTIME_DIR / "history"       # per-print thumbnails: <entry_id>.p
 
 def ensure_runtime() -> None:
     """Create the runtime directory tree if missing. Cheap; safe to call often."""
-    for d in (RUNTIME_DIR, LOG_DIR, ASSETS_DIR, DESIGNS_DIR, HISTORY_DIR):
+    for d in (RUNTIME_DIR, LOG_DIR, DESIGNS_DIR, HISTORY_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 

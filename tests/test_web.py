@@ -4,6 +4,7 @@ tmp_path so tests never touch ~/.labler/."""
 
 from __future__ import annotations
 
+import base64
 import io
 
 import pytest
@@ -21,7 +22,6 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(runtime, "LOG_DIR", tmp_path / "logs")
     monkeypatch.setattr(runtime, "EVENTS_FILE", tmp_path / "logs" / "events.jsonl")
-    monkeypatch.setattr(runtime, "ASSETS_DIR", tmp_path / "assets")
     monkeypatch.setattr(runtime, "DESIGNS_DIR", tmp_path / "designs")
     monkeypatch.setattr(runtime, "HISTORY_FILE", tmp_path / "history.jsonl")
     monkeypatch.setattr(runtime, "HISTORY_DIR", tmp_path / "history")
@@ -132,15 +132,37 @@ def test_custom_colors_roundtrip(client):
     assert got["settings"]["custom_colors"] == ["#112233", "#aabbcc"]
 
 
-def test_asset_upload_and_serve(client):
+def test_asset_endpoints_are_gone(client):
+    """v0.8.1 removed /api/assets — bitmaps are inlined as data URIs so that image
+    content never lands on the shared server. See specs/central-deployment.md."""
     buf = io.BytesIO()
     Image.new("RGB", (20, 10), "red").save(buf, "PNG")
     buf.seek(0)
-    r = client.post("/api/assets", data={"file": (buf, "x.png")},
-                    content_type="multipart/form-data").get_json()
-    assert r["ok"] and r["w"] == 20 and r["h"] == 10
-    served = client.get("/api/assets/" + r["id"])
-    assert served.status_code == 200
+    assert client.post("/api/assets", data={"file": (buf, "x.png")},
+                       content_type="multipart/form-data").status_code == 404
+    assert client.get("/api/assets/anything.png").status_code == 404
+
+
+def test_render_accepts_inline_data_uri(client):
+    """An image element carrying a data URI renders without any server-side asset."""
+    buf = io.BytesIO()
+    Image.new("RGB", (20, 10), "red").save(buf, "PNG")
+    uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    dl = {"media_mm": 25, "length_px": 60, "elements": [
+        {"type": "image", "x": 0, "y": 0, "w": 40, "h": 20, "src": uri, "fit": "contain"}]}
+    r = client.post("/api/render", json=dl)
+    assert r.status_code == 200
+    im = Image.open(io.BytesIO(r.data)).convert("RGB")
+    assert im.getpixel((5, 5)) == (255, 0, 0)   # the inlined red bitmap actually drew
+
+
+def test_render_rejects_malformed_data_uri(client):
+    dl = {"media_mm": 25, "length_px": 60, "elements": [
+        {"type": "image", "x": 0, "y": 0, "w": 40, "h": 20,
+         "src": "data:image/png;base64,!!!not-base64!!!", "fit": "contain"}]}
+    r = client.post("/api/render", json=dl)
+    assert r.status_code == 400
+    assert not r.get_json()["ok"]
 
 
 def test_design_save_list_load_delete(client):

@@ -85,7 +85,7 @@ function addElement(type) {
   // don't pile up at the same y (which made the canvas not match the list).
   const y0 = nextFreeY();
   let el;
-  if (type === "image") el = { type, x: 0, y: y0, w, h: 200, rotate: 0, z, src_id: null, fit: "contain" };
+  if (type === "image") el = { type, x: 0, y: y0, w, h: 200, rotate: 0, z, src: null, fit: "contain" };
   else if (type === "text") el = { type, x: 8, y: y0, w: w - 16, h: 80, rotate: 0, z, text: "Label", font: settingsCache.font || defaultFont() || null, font_size: 56, color: "black", align: "center", bold: false, italic: false };
   else if (type === "border") el = { type, z: 99, color: "black", thickness: 4 };
   design.elements.push(el);
@@ -109,38 +109,83 @@ function nextFreeY() {
 
 $$("[data-add]").forEach(b => b.addEventListener("click", () => addElement(b.dataset.add)));
 
-// POST an image blob/File to /api/assets (which content-addresses it and saves a
-// copy under ~/.labler/assets/), returning {ok,id,w,h}. Shared by file-pick and paste.
-async function uploadImageBlob(blob, filename = "image.png") {
-  const fd = new FormData();
-  fd.append("file", blob, filename);
-  return fetch("/api/assets", { method: "POST", body: fd }).then(x => x.json());
+// ---- image inlining (data URIs) --------------------------------------------
+// The printer is SHARED, so bitmaps are NEVER uploaded — an image is label content
+// and must not land on the server's disk. Blobs are read to a `data:` URI and live
+// inside the display list, which the server decodes in-memory per render and then
+// forgets. See specs/central-deployment.md.
+
+// Must match compose.MAX_DATA_URI_BYTES (server rejects anything larger).
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+// Read a Blob/File to a base64 data URI.
+function blobToDataURI(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error || new Error("read failed"));
+    fr.readAsDataURL(blob);
+  });
+}
+
+// Natural pixel size of a data URI, needed to preserve aspect on import.
+function dataURISize(uri) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+    im.onerror = () => reject(new Error("not a decodable image"));
+    im.src = uri;
+  });
+}
+
+// Pure: height that preserves aspect when fitting natural (natW x natH) to width w.
+// Extracted so it is testable under `node -e` without a DOM (CLAUDE.md lesson #6).
+function fitHeight(natW, natH, w) {
+  if (!natW || !natH) return 200;
+  return Math.round(natH * (w / natW));
+}
+
+// Pure: validate a blob's size before reading it. Returns an error string or null.
+function imageSizeError(bytes) {
+  if (!bytes) return "empty image";
+  if (bytes > MAX_IMAGE_BYTES) {
+    return `image too large (${(bytes / 1048576).toFixed(1)} MB, max ` +
+           `${MAX_IMAGE_BYTES / 1048576} MB)`;
+  }
+  return null;
+}
+
+// Read a blob into an image element: sets `src` (data URI) and aspect-correct `h`.
+async function loadImageIntoElement(el, blob) {
+  const err = imageSizeError(blob.size);
+  if (err) { alert(err); return false; }
+  const uri = await blobToDataURI(blob);
+  const nat = await dataURISize(uri);
+  el.src = uri;
+  el.h = fitHeight(nat.w, nat.h, el.w);
+  return true;
 }
 
 function pickImageFor(el) {
   const inp = document.createElement("input");
   inp.type = "file"; inp.accept = "image/*";
   inp.onchange = async () => {
-    const r = await uploadImageBlob(inp.files[0], inp.files[0].name);
-    if (r.ok) {
-      el.src_id = r.id;
-      // fit the imported image to tape width preserving aspect
-      el.h = Math.round(r.h * (el.w / r.w));
-      renderEditor();
-    } else alert("upload failed: " + r.error);
+    try {
+      if (await loadImageIntoElement(el, inp.files[0])) renderEditor();
+    } catch (e) { alert("could not load image: " + e.message); }
   };
   inp.click();
 }
 
-// Add a new image element from an already-uploaded asset (id + natural w/h),
-// sized to the tape width preserving aspect. Used by paste.
-function addImageFromAsset(id, natW, natH) {
+// Add a new image element from an inlined data URI, sized to the tape width
+// preserving aspect. Used by paste.
+function addImageFromDataURI(uri, natW, natH) {
   const w = design.media_mm === 50 ? 624 : 312;
   const z = design.elements.length;
   const el = {
     type: "image", x: 0, y: nextFreeY(), w, rotate: 0, z,
-    src_id: id, fit: "contain",
-    h: natW ? Math.round(natH * (w / natW)) : 200,
+    src: uri, fit: "contain",
+    h: fitHeight(natW, natH, w),
   };
   design.elements.push(el);
   selected = design.elements.length - 1;
@@ -148,9 +193,9 @@ function addImageFromAsset(id, natW, natH) {
 }
 
 // Paste a bitmap image from the clipboard straight into the editor. The blob is
-// uploaded via /api/assets (which saves a copy under ~/.labler/assets/), then added
-// as an image element. Only acts on the Edit tab, and only when the paste target
-// isn't a text field (so Ctrl+V in the Text box still pastes text).
+// inlined as a data URI (never uploaded) and added as an image element. Only acts
+// on the Edit tab, and only when the paste target isn't a text field (so Ctrl+V in
+// the Text box still pastes text).
 document.addEventListener("paste", async (e) => {
   const onEdit = $("#tab-edit")?.classList.contains("active");
   if (!onEdit) return;
@@ -162,14 +207,16 @@ document.addEventListener("paste", async (e) => {
   e.preventDefault();
   const blob = imgItem.getAsFile();
   if (!blob) return;
-  const ext = (imgItem.type.split("/")[1] || "png").replace("jpeg", "jpg");
+  const err = imageSizeError(blob.size);
+  if (err) { alert("paste failed: " + err); return; }
   flash("#print-status", "pasting image…");
-  const r = await uploadImageBlob(blob, `pasted.${ext}`);
-  if (r.ok) {
-    addImageFromAsset(r.id, r.w, r.h);
-    flash("#print-status", "pasted image (saved to assets)");
-  } else {
-    alert("paste failed: " + (r.error || "upload error"));
+  try {
+    const uri = await blobToDataURI(blob);
+    const nat = await dataURISize(uri);
+    addImageFromDataURI(uri, nat.w, nat.h);
+    flash("#print-status", "pasted image");
+  } catch (err2) {
+    alert("paste failed: " + err2.message);
   }
 });
 
@@ -537,6 +584,11 @@ $("#btn-load-design").onclick = async () => {
       dlog(`LOAD "${d.id}" — server returned elements:`, elDigest(design.elements));
       if (!design.elements) design = newDesign();
       migrateFonts(design);
+      const orphaned = migrateAssets(design);
+      if (orphaned) {
+        flash("#print-status",
+              `${orphaned} image(s) need re-picking (uploads were removed in v0.8.1)`);
+      }
       if (design.rotate == null) design.rotate = 0;
       $("#design-name").value = design.name || "";
       $("#edit-media").value = design.media_mm; $("#edit-length").value = design.length_px;
@@ -699,6 +751,20 @@ function migrateFonts(dl) {
     }
   });
 }
+// Designs saved before v0.8.1 reference a server-side asset by `src_id`. That
+// endpoint is gone (images are inlined now), so the bitmap cannot be recovered —
+// flag the element rather than letting it render as a silent blank. The user
+// re-picks the image; everything else about the design survives.
+function migrateAssets(dl) {
+  let orphaned = 0;
+  (dl.elements || []).forEach(el => {
+    if (el.type !== "image") return;
+    if (el.src_id && !el.src) { el.missing_asset = true; orphaned++; }
+    delete el.src_id;
+  });
+  return orphaned;
+}
+
 function fillFontSelect(sel, current) {
   if (!sel) return;
   const fonts = window.__fonts || [];
@@ -753,6 +819,7 @@ function loadDesignIntoEditor(dl) {
   if (!dl) return;
   design = { ...newDesign(), ...dl };
   migrateFonts(design);
+  migrateAssets(design);
   if (design.rotate == null) design.rotate = 0;
   selected = design.elements?.length ? 0 : null;
   $("#design-name").value = design.name || "";
