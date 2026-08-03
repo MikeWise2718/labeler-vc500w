@@ -128,6 +128,8 @@
     <section id="tab-device" class="panel">
       <h2>Device — Brother VC-500W</h2>
       <button id="btn-refresh-device">Refresh</button>
+      <button id="btn-powercycle" class="danger">⚡ Power-cycle printer</button>
+      <p class="hint" id="power-status"></p>
       <table class="kv" id="device-table"></table>
       <details>
         <summary>Raw status.xml</summary>
@@ -146,6 +148,23 @@
           </label>
           <label>Mode <select id="set-mode"><option>vivid</option><option>normal</option></select></label>
           <label>Cut <select id="set-cut"><option>full</option><option>half</option><option>none</option></select></label>
+        </div>
+      </details>
+      <details><summary>Power control (wedge recovery)</summary>
+        <p class="hint">
+          A wedged VC-500W only clears with a power-cycle. If the printer is plugged
+          into a Shelly smart outlet, set it here and the Device tab can restart it
+          remotely — otherwise you have to pull the plug by hand.
+          Leave the host blank to disable.
+        </p>
+        <div class="form">
+          <label>Shelly host / IP <input id="set-shelly-host" placeholder="192.168.25.184"></label>
+          <label>Outlet
+            <select id="set-shelly-outlet">
+              <option value="0">0</option><option value="1">1</option>
+              <option value="2">2</option><option value="3">3</option>
+            </select>
+          </label>
         </div>
       </details>
       <details><summary>Editor defaults</summary>

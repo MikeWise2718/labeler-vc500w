@@ -66,6 +66,10 @@ class WebSettings:
     background: str = "white"          # default canvas background
     units: str = "in"                  # in | cm  (display only)
     custom_colors: list[str] = field(default_factory=list)  # extra preset swatches (hex)
+    # Shelly smart outlet the printer is plugged into, for remote wedge recovery.
+    # Empty host = feature disabled (no outlet wired up yet). See labler/power.py.
+    shelly_host: str = ""              # e.g. "192.168.25.184"
+    shelly_outlet: int = 0             # 0-3 on a Power Strip 4 Gen4
 
     @classmethod
     def load(cls) -> "WebSettings":

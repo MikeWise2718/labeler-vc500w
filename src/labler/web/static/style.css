@@ -42,6 +42,11 @@ button {
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.primary:hover { filter: brightness(1.1); }
+/* Destructive actions (power-cycle) — must not look like an ordinary button. */
+button.danger { border-color: #c0392b; color: #e74c3c; }
+button.danger:hover { background: #c0392b; color: #fff; border-color: #c0392b; }
+/* History badge for a print that failed. */
+.badge.fail { background: #c0392b; color: #fff; }
 select, input { background: #1b1e23; color: var(--ink); border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 8px; font-size: .9rem; }
 label { display: block; margin: 8px 0; color: var(--muted); }

@@ -736,6 +736,8 @@ async function loadSettings() {
   $("#set-cut").value = r.settings.cut;
   $("#set-bg").value = toHex(r.settings.background);
   $("#set-units").value = r.settings.units;
+  $("#set-shelly-host").value = r.settings.shelly_host || "";
+  $("#set-shelly-outlet").value = String(r.settings.shelly_outlet ?? 0);
   design.media_mm = r.settings.media_width;
   design.background = r.settings.background;
   renderCustomColors();
@@ -769,9 +771,33 @@ $("#btn-save-settings").onclick = async () => {
     mode: $("#set-mode").value, cut: $("#set-cut").value,
     font: $("#set-font").value || null, background: $("#set-bg").value, units: $("#set-units").value,
     custom_colors: settingsCache.custom_colors || [],
+    shelly_host: $("#set-shelly-host").value.trim(),
+    shelly_outlet: +$("#set-shelly-outlet").value,
   };
   const r = await api.post("/api/settings", body);
   if (r.ok) { settingsCache = r.settings; flash("#settings-status", "saved"); pollStatus(); }
+};
+
+// ---- power-cycle (wedge recovery) ------------------------------------------
+// Cutting mains power to a printer is destructive — it can leave a partly-fed
+// label in the mechanism. Never fire this without the user agreeing to the
+// warning; the server independently requires {confirm:true}.
+$("#btn-powercycle").onclick = async () => {
+  const ok = confirm(
+    "Power-cycle the printer?\n\n" +
+    "This cuts mains power at the Shelly outlet and restores it after ~8 s.\n" +
+    "Only do this when the printer is WEDGED (stuck BUSY/PRINTING with no tape " +
+    "moving). If a print is genuinely running, this will ruin the label and may " +
+    "leave paper in the mechanism.");
+  if (!ok) return;
+  flash("#power-status", "cutting power…");
+  const r = await api.post("/api/device/powercycle", { confirm: true });
+  if (r.ok) {
+    flash("#power-status", "⚡ power-cycled — " + (r.hint || "give it ~20 s"));
+    setTimeout(() => { pollStatus(); loadDevice(); }, 20000);
+  } else {
+    flash("#power-status", "✗ " + (r.error || "failed") + (r.hint ? " — " + r.hint : ""));
+  }
 };
 
 // ---- export / import (browser-local data) ----------------------------------

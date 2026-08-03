@@ -387,3 +387,60 @@ def test_concurrent_prints_serialize_through_http(client, monkeypatch):
 
     assert not errors
     assert max_concurrent == 1, f"printer touched by {max_concurrent} requests at once"
+
+
+def test_powercycle_requires_explicit_confirmation(client):
+    """Cutting mains power is destructive — never on an unconfirmed request."""
+    assert client.post("/api/device/powercycle", json={}).status_code == 400
+    assert client.post("/api/device/powercycle", json={"confirm": False}).status_code == 400
+    assert client.post("/api/device/powercycle", json={"confirm": "yes"}).status_code == 400
+
+
+def test_powercycle_without_configured_outlet_is_a_clear_error(client):
+    r = client.post("/api/device/powercycle", json={"confirm": True})
+    assert r.status_code == 400
+    body = r.get_json()
+    assert not body["ok"] and "Shelly" in body["error"]
+    assert "by hand" in body["hint"]        # tell the user what to do instead
+
+
+def test_powercycle_happy_path(client, monkeypatch):
+    from labler import power
+    calls = []
+    monkeypatch.setattr(power, "power_cycle",
+                        lambda host, outlet, **kw: calls.append((host, outlet))
+                        or {"host": host, "outlet": outlet, "was_on": True,
+                            "off_seconds": 8.0})
+    client.post("/api/settings", json={"shelly_host": "1.2.3.4", "shelly_outlet": 2})
+    r = client.post("/api/device/powercycle", json={"confirm": True}).get_json()
+    assert r["ok"] and r["outlet"] == 2
+    assert calls == [("1.2.3.4", 2)]
+    assert "20 s" in r["hint"]              # tell the user to wait before printing
+
+
+def test_powercycle_surfaces_shelly_failure(client, monkeypatch):
+    from labler import power
+    from labler.errors import LablerError
+
+    def boom(host, outlet, **kw):
+        raise LablerError("Shelly at 1.2.3.4 unreachable: timed out")
+
+    monkeypatch.setattr(power, "power_cycle", boom)
+    client.post("/api/settings", json={"shelly_host": "1.2.3.4", "shelly_outlet": 0})
+    r = client.post("/api/device/powercycle", json={"confirm": True})
+    assert r.status_code == 502
+    assert "unreachable" in r.get_json()["error"]
+
+
+def test_powercycle_does_not_log_label_content(client, monkeypatch):
+    """The power-cycle log line is statistics only, like everything else."""
+    from labler import power
+    monkeypatch.setattr(power, "power_cycle",
+                        lambda host, outlet, **kw: {"host": host, "outlet": outlet,
+                                                    "was_on": True, "off_seconds": 8.0})
+    client.post("/api/settings", json={"shelly_host": "1.2.3.4", "shelly_outlet": 0})
+    client.post("/api/device/powercycle", json={"confirm": True})
+    log = runtime.EVENTS_FILE.read_text(encoding="utf-8")
+    assert "powercycle" in log
+    for forbidden in runtime.LOG_FIELD_DENIED_CONTENT:
+        assert f'"{forbidden}"' not in log

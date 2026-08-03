@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
-from .. import __version__, compose, protocol
+from .. import __version__, compose, power, protocol
 from ..config import MEDIA, SUPPORTED_WIDTHS, media_for
 from ..errors import LablerError
 from ..render import _load_font  # for font availability probing
@@ -370,6 +370,39 @@ def create_app() -> Flask:
     def api_fonts():
         from ..render import FONT_FILE_TO_FAMILY
         return jsonify(fonts=_available_fonts(), legacy=FONT_FILE_TO_FAMILY)
+
+    # ---- remote power-cycle (wedge recovery) ------------------------------------
+    @app.post("/api/device/powercycle")
+    def api_powercycle():
+        """Cut and restore mains power to the printer via its Shelly outlet.
+
+        DESTRUCTIVE: this yanks power from a device that may be mid-print. It is the
+        documented and ONLY way out of a wedge (CLAUDE.md), but it is never automatic
+        — the request must carry {"confirm": true}, which the UI only sends after the
+        user agrees to a warning.
+        """
+        body = request.get_json(silent=True) or {}
+        if body.get("confirm") is not True:
+            return jsonify(ok=False,
+                           error="power-cycle requires explicit confirmation"), 400
+        s = _settings()
+        if not s.shelly_host:
+            return jsonify(ok=False,
+                           error="no Shelly outlet configured (Settings → power control)",
+                           hint="Set the Shelly host + outlet, or power-cycle by hand."), 400
+        try:
+            # Hold the printer lock so nobody starts a print into a dying printer.
+            with _print_queue.hold(_print_queue.take_ticket()):
+                result = power.power_cycle(s.shelly_host, s.shelly_outlet)
+        except LablerError as e:
+            log_event("device.powercycle_failed", str(e),
+                      host=s.shelly_host, kind=type(e).__name__)
+            return jsonify(ok=False, error=str(e)), 502
+        log_event("device.powercycle", "printer power-cycled",
+                  host=s.shelly_host, id=str(s.shelly_outlet))
+        return jsonify(ok=True,
+                       hint="Printer restarting — give it ~20 s before printing.",
+                       **result)
 
     # ---- print queue -------------------------------------------------------------
     @app.get("/api/queue")
