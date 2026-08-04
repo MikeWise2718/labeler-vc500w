@@ -159,15 +159,34 @@ test("importing garbage throws rather than corrupting the store", async () => {
   assert.equal((await store.listDesigns()).length, 1);   // untouched
 });
 
-test("import skips entries with no id rather than throwing", async () => {
+test("import derives an id for id-less designs instead of dropping them", async () => {
+  // Regression: an externally generated / hand-authored export whose designs lack
+  // an `id` used to be silently skipped — import reported "N designs" but stored
+  // zero, so the user could not find their imported labels. Now a missing id is
+  // derived from the name and the design is stored.
   await reset();
   const counts = await store.importAll({
     format: "labler-export", version: 1,
-    designs: [{ id: "ok-one", name: "Fine" }, { name: "No id" }],
+    designs: [{ id: "ok-one", name: "Fine" }, { name: "No Id Here", display_list: {} }],
     history: [],
   });
-  assert.equal(counts.designs, 2);                       // reported as offered
-  assert.equal((await store.listDesigns()).length, 1);   // only the valid one stored
+  assert.equal(counts.designs, 2);                       // both actually stored now
+  const stored = await store.listDesigns();
+  assert.equal(stored.length, 2);
+  // the id-less one got a slug derived from its name
+  assert.ok(stored.some(d => d.id === "no-id-here" && d.name === "No Id Here"));
+});
+
+test("import count reflects what stored, not the array length", async () => {
+  // A completely unusable entry (not an object) is not counted as stored.
+  await reset();
+  const counts = await store.importAll({
+    format: "labler-export", version: 1,
+    designs: [{ id: "real", name: "Real" }, null, "garbage"],
+    history: [],
+  });
+  assert.equal(counts.designs, 1);
+  assert.equal((await store.listDesigns()).length, 1);
 });
 
 test("history is trimmed to MAX_HISTORY_ENTRIES", async () => {

@@ -181,14 +181,27 @@ function parseExport(obj) {
 
 async function importAll(obj) {
   const { designs, history } = parseExport(obj);
+  // An id-less design used to be silently dropped here — the import would report
+  // "N designs" (the array length) while storing zero, leaving the user hunting for
+  // labels that never landed. Give any design missing an id a derived one so a
+  // hand-authored or externally generated export imports instead of vanishing.
+  let storedDesigns = 0;
   if (designs.length) {
-    await tx(STORE_DESIGNS, "readwrite", store => { designs.forEach(d => d && d.id && store.put(d)); });
+    await tx(STORE_DESIGNS, "readwrite", store => {
+      designs.forEach(d => {
+        if (!d || typeof d !== "object") return;
+        if (!d.id) d.id = slugify(d.name || (d.display_list && d.display_list.name));
+        if (!d.name) d.name = d.id;
+        store.put(d);
+        storedDesigns++;
+      });
+    });
   }
   if (history.length) {
     await tx(STORE_HISTORY, "readwrite", store => { history.forEach(h => h && h.id && store.put(h)); });
   }
   await trimHistory();
-  return { designs: designs.length, history: history.length };
+  return { designs: storedDesigns, history: history.length };
 }
 
 // ---- one-time migration from the pre-0.8.3 server --------------------------
