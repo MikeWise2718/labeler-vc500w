@@ -616,13 +616,16 @@ def _make_request_handler():
 
 
 def main() -> None:
-    """Entry point: `labler-web`. Runs the dev server on 0.0.0.0:5000."""
+    """Entry point: `labler-web`. Runs the dev server on 0.0.0.0:5001 (see -p)."""
     import argparse
 
     from rich.console import Console
 
     ap = argparse.ArgumentParser(prog="labler-web", description="VC-500W label designer web app")
-    ap.add_argument("-p", "--port", type=int, default=5000)
+    # Default 5001, not Flask's usual 5000: chgeo and other local Flask apps grab
+    # 5000, and a silent bind failure / opening the wrong app there wasted a session
+    # (CLAUDE.md lesson #12). Override with -p for a one-off.
+    ap.add_argument("-p", "--port", type=int, default=5001)
     ap.add_argument("-b", "--bind", default="0.0.0.0")
     ap.add_argument("-d", "--debug", action="store_true")
     args = ap.parse_args()

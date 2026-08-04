@@ -309,3 +309,14 @@ Hard-won, to stop re-paying for them:
    running a server yourself to test, **shut it down when done** — don't leave it holding the exe. To
    run the test suite while a server is up, call `.venv/Scripts/python.exe -m pytest` directly (skips
    the `uv` rebuild that would touch the locked exe).
+
+12. **Port 5000 collides with `chgeo` (and any other Flask app) — labler now defaults to 5001.**
+   `D:\python\chgeo` runs `flask --app chgeo run`, which binds Flask's default **5000**. labler used
+   to default to 5000 too, so opening `localhost:5000` showed **chgeo**, not labler — its `/api/status`
+   and `/api/queue` 404'd, the Print tab hung on "waiting for the printer…", and `run.bat` silently
+   failed to bind. Cost a confusing stretch 2026-08-04 before `curl .../` revealed `<title>chgeo</title>`.
+   **Diagnosis tell: `curl http://localhost:5000/api/ping` → `version` that isn't labler's (chgeo was
+   `0.20.1`), or the page `<title>` is another app.** Fix already applied: `app.py` default port is
+   **5001** and `run.bat` documents it. When a labler endpoint 404s or shows a wrong version, check
+   **which app answers the port** before suspecting labler code (related to lesson #10 — wrong/stale
+   server masquerading as a bug).
