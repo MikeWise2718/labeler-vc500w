@@ -39,16 +39,18 @@ function newDesign() {
 }
 
 // ---- tabs -------------------------------------------------------------------
-$$(".tab").forEach(t => t.addEventListener("click", () => {
-  $$(".tab").forEach(x => x.classList.remove("active"));
+// Activate a tab by name (e.g. "edit", "print"). Reused by the tab buttons and by
+// code that needs to jump the user to a tab (e.g. showing designs after import).
+function switchTab(name) {
+  $$(".tab").forEach(x => x.classList.toggle("active", x.dataset.tab === name));
   $$(".panel").forEach(x => x.classList.remove("active"));
-  t.classList.add("active");
-  $("#tab-" + t.dataset.tab).classList.add("active");
-  if (t.dataset.tab === "device") loadDevice();
-  if (t.dataset.tab === "history") loadHistory();
-  if (t.dataset.tab === "about") loadAbout();
-  if (t.dataset.tab === "print") renderPrintPreview();
-}));
+  $("#tab-" + name)?.classList.add("active");
+  if (name === "device") loadDevice();
+  if (name === "history") loadHistory();
+  if (name === "about") loadAbout();
+  if (name === "print") renderPrintPreview();
+}
+$$(".tab").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
 // ---- boot -------------------------------------------------------------------
 (async function boot() {
@@ -607,7 +609,10 @@ $("#btn-new-design").onclick = () => {
   syncRotateLabel();
   addElement("text");
 };
-$("#btn-load-design").onclick = async () => {
+// Open the design picker: fetch fresh from IndexedDB, render the list, show the
+// modal. Extracted so it can be called both from the "Open Design" button and
+// automatically after an import (so freshly imported designs are shown at once).
+async function openDesignPicker() {
   const designs = await store.listDesigns();
   const ul = $("#design-list"); ul.innerHTML = "";
   if (!designs.length) {
@@ -641,7 +646,8 @@ $("#btn-load-design").onclick = async () => {
     ul.appendChild(li);
   });
   $("#modal").classList.remove("hidden");
-};
+}
+$("#btn-load-design").onclick = openDesignPicker;
 $("#modal-close").onclick = () => $("#modal").classList.add("hidden");
 
 // ============================ PRINT ========================================
@@ -828,6 +834,13 @@ $("#btn-import-data").onclick = () => {
       flash("#data-status",
             `imported ${counts.designs} design(s), ${counts.history} history entries`);
       if ($("#tab-history")?.classList.contains("active")) loadHistory();
+      // Surface the newly imported designs immediately instead of leaving the
+      // user to hunt for them: jump to Edit and open the design picker (which
+      // re-reads IndexedDB, so the imports are listed). Only when designs came in.
+      if (counts.designs > 0) {
+        switchTab("edit");
+        openDesignPicker();
+      }
     } catch (e) {
       flash("#data-status", "import failed: " + e.message);
     }
@@ -965,10 +978,7 @@ function loadDesignIntoEditor(dl) {
   $("#edit-media").value = design.media_mm;
   $("#edit-length").value = design.length_px;
   syncRotateLabel();
-  $$(".tab").forEach(x => x.classList.remove("active"));
-  $$(".panel").forEach(x => x.classList.remove("active"));
-  $(`.tab[data-tab="edit"]`).classList.add("active");
-  $("#tab-edit").classList.add("active");
+  switchTab("edit");
   renderEditor();
 }
 
