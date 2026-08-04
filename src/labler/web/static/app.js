@@ -38,6 +38,79 @@ function newDesign() {
   return { name: "", media_mm: 25, length_px: "auto", rotate: 0, background: "white", elements: [] };
 }
 
+// ---- undo / redo ------------------------------------------------------------
+// Snapshot-based: capture a deep copy of {design, selected} at the START of each
+// discrete edit gesture (add/delete/reorder, a drag, a field-edit session), so one
+// user action = one undo step. Ctrl+Z restores the previous snapshot; Ctrl+Y (or
+// Ctrl+Shift+Z) redoes. resetUndo() is called whenever a whole design is loaded/new
+// so undo never bleeds across a load boundary.
+const UNDO_LIMIT = 50;
+let undoStack = [];
+let redoStack = [];
+
+function snapshot() {
+  return JSON.stringify({ design, selected });
+}
+// Capture the CURRENT state before a mutation. `coalesce` collapses a run of edits
+// to the same logical target (e.g. keystrokes in one field) into a single step:
+// if the top of the stack has the same tag, we don't push again.
+let _lastTag = null;
+function pushUndo(tag = null) {
+  if (tag && tag === _lastTag) return;     // same edit session -> one step
+  _lastTag = tag;
+  undoStack.push(snapshot());
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack = [];                          // a new edit invalidates redo
+  syncUndoButtons();
+}
+function resetUndo() { undoStack = []; redoStack = []; _lastTag = null; syncUndoButtons(); }
+function endEditSession() { _lastTag = null; }   // next edit starts a fresh step
+
+function syncUndoButtons() {
+  const u = $("#btn-undo"), r = $("#btn-redo");
+  if (u) u.disabled = undoStack.length === 0;
+  if (r) r.disabled = redoStack.length === 0;
+}
+
+function applySnapshot(json) {
+  const s = JSON.parse(json);
+  design = s.design;
+  selected = s.selected;
+  renderEditor();
+}
+function undo() {
+  if (!undoStack.length) { flash("#print-status", "nothing to undo"); return; }
+  redoStack.push(snapshot());
+  applySnapshot(undoStack.pop());
+  _lastTag = null;
+  syncUndoButtons();
+  flash("#print-status", "undo");
+}
+function redo() {
+  if (!redoStack.length) { flash("#print-status", "nothing to redo"); return; }
+  undoStack.push(snapshot());
+  applySnapshot(redoStack.pop());
+  _lastTag = null;
+  syncUndoButtons();
+  flash("#print-status", "redo");
+}
+$("#btn-undo")?.addEventListener("click", undo);
+$("#btn-redo")?.addEventListener("click", redo);
+
+// Keyboard: Ctrl/Cmd+Z = undo, Ctrl+Y or Ctrl/Cmd+Shift+Z = redo. Only on the Edit
+// tab, and NOT while typing in a field (there the browser's own text undo applies).
+document.addEventListener("keydown", (e) => {
+  if (!$("#tab-edit")?.classList.contains("active")) return;
+  const t = e.target;
+  const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+  if (typing) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const k = e.key.toLowerCase();
+  if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redo(); }
+});
+
 // ---- tabs -------------------------------------------------------------------
 // Activate a tab by name (e.g. "edit", "print"). Reused by the tab buttons and by
 // code that needs to jump the user to a tab (e.g. showing designs after import).
@@ -93,6 +166,8 @@ async function pollStatus() {
 
 // ============================ EDITOR ========================================
 function addElement(type) {
+  pushUndo();                    // discrete action -> one undo step
+  endEditSession();
   const w = design.media_mm === 50 ? 624 : 312;
   const z = design.elements.length;
   // Start new elements just below whatever's already there, so multiple adds
@@ -194,6 +269,7 @@ function pickImageFor(el) {
 // Add a new image element from an inlined data URI, sized to the tape width
 // preserving aspect. Used by paste.
 function addImageFromDataURI(uri, natW, natH) {
+  pushUndo(); endEditSession();
   const w = design.media_mm === 50 ? 624 : 312;
   const z = design.elements.length;
   const el = {
@@ -249,12 +325,17 @@ function renderBackgroundControl() {
   if (!box) return;
   box.innerHTML = colorField("background", "Background", design.background || "white");
   const inp = box.querySelector('input[data-k="background"]');
-  if (inp) inp.oninput = () => {
-    design.background = inp.value;
-    syncSwatches("background", inp.value);
-    scheduleRender();
-  };
+  if (inp) {
+    inp.oninput = () => {
+      pushUndo("bg");
+      design.background = inp.value;
+      syncSwatches("background", inp.value);
+      scheduleRender();
+    };
+    inp.onblur = endEditSession;
+  }
   box.querySelectorAll("[data-swatch]").forEach(b => b.onclick = () => {
+    pushUndo(); endEditSession();
     design.background = b.dataset.color;
     if (inp) inp.value = toHex(b.dataset.color);
     syncSwatches("background", b.dataset.color);
@@ -277,7 +358,7 @@ function renderElementList() {
     li.querySelector(".el-type").onclick = () => { selected = i; renderEditor(); };
     ul.appendChild(li);
   });
-  ul.querySelectorAll("[data-del]").forEach(b => b.onclick = e => { e.stopPropagation(); design.elements.splice(+b.dataset.del, 1); selected = null; renderEditor(); });
+  ul.querySelectorAll("[data-del]").forEach(b => b.onclick = e => { e.stopPropagation(); pushUndo(); endEditSession(); design.elements.splice(+b.dataset.del, 1); selected = null; renderEditor(); });
   ul.querySelectorAll("[data-up]").forEach(b => b.onclick = e => { e.stopPropagation(); moveZ(+b.dataset.up, -1); });
   ul.querySelectorAll("[data-down]").forEach(b => b.onclick = e => { e.stopPropagation(); moveZ(+b.dataset.down, +1); });
 }
@@ -285,6 +366,7 @@ function renderElementList() {
 function moveZ(i, dir) {
   const j = i + dir;
   if (j < 0 || j >= design.elements.length) return;
+  pushUndo(); endEditSession();
   [design.elements[i], design.elements[j]] = [design.elements[j], design.elements[i]];
   design.elements.forEach((el, k) => { if (el.type !== "border") el.z = k; });
   selected = j; renderEditor();
@@ -322,24 +404,33 @@ function renderProps() {
   }
   h += `</div>`;
   p.innerHTML = h;
-  p.querySelectorAll("[data-k]").forEach(inp => inp.oninput = () => {
-    let v = inp.value;
-    if (inp.type === "number") v = +v;
-    el[inp.dataset.k] = v;
-    if (inp.dataset.k === "color") syncSwatches(inp.dataset.k, v);
-    if (inp.dataset.k === "text") renderElementList();
-    // Changing the font can change which styles exist -> rebuild props so the
-    // Bold/Italic toggles enable/disable correctly. Clear flags the new font lacks.
-    if (inp.dataset.k === "font") {
-      if (el.bold && !fontHas(v, "bold")) el.bold = false;
-      if (el.italic && !fontHas(v, "italic")) el.italic = false;
-      renderProps();
-    }
-    scheduleRender();
+  p.querySelectorAll("[data-k]").forEach(inp => {
+    // One undo step per field-edit session: a run of keystrokes in the SAME field
+    // (selected element + key) coalesces into a single snapshot, taken before the
+    // first change. Leaving the field (blur) ends the session so the next edit is
+    // its own step.
+    inp.oninput = () => {
+      pushUndo(`prop:${selected}:${inp.dataset.k}`);
+      let v = inp.value;
+      if (inp.type === "number") v = +v;
+      el[inp.dataset.k] = v;
+      if (inp.dataset.k === "color") syncSwatches(inp.dataset.k, v);
+      if (inp.dataset.k === "text") renderElementList();
+      // Changing the font can change which styles exist -> rebuild props so the
+      // Bold/Italic toggles enable/disable correctly. Clear flags the new font lacks.
+      if (inp.dataset.k === "font") {
+        if (el.bold && !fontHas(v, "bold")) el.bold = false;
+        if (el.italic && !fontHas(v, "italic")) el.italic = false;
+        renderProps();
+      }
+      scheduleRender();
+    };
+    inp.onblur = endEditSession;
   });
   // Bold / Italic toggle buttons.
   p.querySelectorAll("[data-flag]").forEach(btn => btn.onclick = () => {
     if (btn.disabled) return;
+    pushUndo(); endEditSession();
     const flag = btn.dataset.flag;
     el[flag] = !el[flag];
     btn.classList.toggle("on", el[flag]);
@@ -525,6 +616,7 @@ function drawOverlay() {
 function enableDrag(box, el, sx, sy) {
   const onDown = (e, mode) => {
     e.preventDefault();
+    pushUndo(); endEditSession();   // one undo step per drag/resize gesture
     const start = pointer(e);
     const ox = el.x, oy = el.y, ow = el.w, oh = el.h || 40;
     const move = ev => {
@@ -551,12 +643,13 @@ function renderProps2Sync() { // update number inputs live during drag without f
   ["x", "y", "w", "h"].forEach(k => { const i = $(`[data-k="${k}"]`); if (i && k in el) i.value = el[k]; });
 }
 
-$("#edit-media").addEventListener("change", () => { syncMediaLength(); renderCanvas(); });
-$("#edit-length").addEventListener("change", () => { syncMediaLength(); renderCanvas(); });
+$("#edit-media").addEventListener("change", () => { pushUndo(); endEditSession(); syncMediaLength(); renderCanvas(); });
+$("#edit-length").addEventListener("change", () => { pushUndo(); endEditSession(); syncMediaLength(); renderCanvas(); });
 
 // Rotate the WHOLE label 90deg each click (0->90->180->270->0). Lets you flip a long
 // design so it lies across the tape and uses far less length.
 $("#btn-rotate-label").onclick = () => {
+  pushUndo(); endEditSession();
   design.rotate = ((design.rotate || 0) + 90) % 360;
   syncRotateLabel();
   renderCanvas();
@@ -602,6 +695,7 @@ async function renderPreviewDataURI(dl) {
 $("#btn-new-design").onclick = () => {
   const name = (prompt("Name for the new design:", "") || "").trim();
   if (!name) return;  // cancelled — keep current design
+  resetUndo();        // fresh design -> undo history starts clean
   design = newDesign();
   design.name = name;
   selected = null;
@@ -623,6 +717,7 @@ async function openDesignPicker() {
     li.innerHTML = `${d.preview ? `<img src="${d.preview}">` : ""}<span class="d-name"></span><button data-del="${d.id}">✕</button>`;
     li.querySelector(".d-name").textContent = d.name;   // textContent: names are user input
     li.querySelector(".d-name").onclick = async () => {
+      resetUndo();      // loading a design starts a clean undo history
       design = d.display_list || newDesign();
       dlog(`LOAD "${d.id}" — stored elements:`, elDigest(design.elements));
       if (!design.elements) design = newDesign();
@@ -980,6 +1075,7 @@ async function loadHistory() {
 
 function loadDesignIntoEditor(dl) {
   if (!dl) return;
+  resetUndo();      // loading from History starts a clean undo history
   design = { ...newDesign(), ...dl };
   migrateFonts(design);
   migrateAssets(design);
