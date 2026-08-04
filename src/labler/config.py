@@ -15,9 +15,11 @@ from pathlib import Path
 PX_PER_MM = 12.48
 
 # Default printer on the home LAN. mDNS name is stable across DHCP leases; the
-# raw IP is the fallback if mDNS resolution is unavailable.
+# raw IP is the fallback if mDNS resolution is unavailable. The IPv4 is a
+# MAC-based DHCP reservation (04:FE:A1:53:BF:2B -> .190), so it survives the
+# printer roaming between APs/SSIDs (e.g. PrettyFly -> Dungeon on the basement move).
 DEFAULT_HOST = "VC-500W5087.local"
-FALLBACK_HOST = "192.168.25.219"
+FALLBACK_HOST = "192.168.25.190"
 PORT = 9100
 
 

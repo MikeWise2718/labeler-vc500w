@@ -58,7 +58,7 @@ class WebSettings:
     name resolved to IPv6 and refused :9100. The IPv4 lease is the reliable target.
     """
 
-    host: str = FALLBACK_HOST          # 192.168.25.219 (see docstring)
+    host: str = FALLBACK_HOST          # 192.168.25.190 (see docstring)
     media_width: int = 25              # 25 | 50 mm
     mode: str = "vivid"                # vivid | normal
     cut: str = "full"                  # none | half | full
