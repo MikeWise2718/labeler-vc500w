@@ -691,11 +691,22 @@ $("#btn-print").onclick = async () => {
   }
   // Record the print in THIS BROWSER's history — the server keeps only statistics.
   // Failures are recorded too: a jam that ate tape is worth seeing in the log.
+  // Rendering the thumbnail and writing the record are separated: a thumbnail
+  // failure must NOT lose the whole entry (that silently dropped a print from
+  // History — the print succeeded but vanished from the log). And if the record
+  // write itself fails (e.g. IndexedDB quota), say so instead of swallowing it.
+  let thumb = null;
   try {
-    const thumb = await renderPreviewDataURI(design);
+    thumb = await renderPreviewDataURI(design);
+  } catch (e) {
+    dlog("history thumbnail render failed (saving entry without it)", e);
+  }
+  let histWarn = "";
+  try {
     await store.addHistory(design, r, thumb);
   } catch (e) {
-    dlog("history write failed", e);   // never let logging break the print feedback
+    dlog("history write failed", e);
+    histWarn = " · ⚠ not saved to History: " + (e.message || e);
   }
   if (r.ok) {
     // Show the TRUE tape stats from the hardware before/after remain delta.
@@ -703,9 +714,9 @@ $("#btn-print").onclick = async () => {
     if (r.remain_before != null) stats.push(`before ${r.remain_before}″`);
     if (r.tape_used_in != null) stats.push(`used ${r.tape_used_in}″ (${(r.tape_used_in*2.54).toFixed(1)} cm)`);
     if (r.remain_after != null) stats.push(`now ${r.remain_after}″`);
-    flash("#print-status", "✓ printed — " + (stats.join(" · ") || `remaining ${r.remain_in ?? "?"}″`));
+    flash("#print-status", "✓ printed — " + (stats.join(" · ") || `remaining ${r.remain_in ?? "?"}″`) + histWarn);
   } else {
-    flash("#print-status", "✗ " + (r.error || ("state " + r.state)));
+    flash("#print-status", "✗ " + (r.error || ("state " + r.state)) + histWarn);
   }
   pollStatus();
 };
