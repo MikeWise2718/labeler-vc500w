@@ -1,4 +1,4 @@
-# Labler-VC500W — Brother VC-500W Label Printing Tool
+# Labeler-VC500W — Brother VC-500W Label Printing Tool
 
 ## Overview
 A program to print labels **directly** to a Brother **VC-500W** ZINK full-color label printer over
@@ -8,8 +8,8 @@ network workspace.
 **Current state (v0.9.0):** working CLI **and** a Flask web label designer, both printing to our
 firmware (status read + print write verified on hardware). The verified core
 (`protocol`/`render`/`compose`/`status`/`config`) is shared by both. The web app
-(`src/labler/web/`) is a **6-tab** UI — **Edit / Print / Device / History / Settings / About** — over
-a display-list editor. Run with `uv run labler-web` (or `run.bat`) → http://localhost:5000; **the app
+(`src/labeler/web/`) is a **6-tab** UI — **Edit / Print / Device / History / Settings / About** — over
+a display-list editor. Run with `uv run labeler-web` (or `run.bat`) → http://localhost:5000; **the app
 opens on the Edit tab** (you land to design, not to print). See `specs/flask-app.md` for the design
 and `README.md` for the printer/protocol background.
 
@@ -23,16 +23,16 @@ picker); **color preset swatches** (standard 8 + greys + user-customizable prese
 **multiline text** (the Text field is a textarea; auto-length grows to fit all lines, never clipped);
 **bold / italic** per text element via font *families* (defaults to Arial, not the style-less
 bitmap "(default)"); **paste a bitmap with Ctrl+V** straight onto the label (uploaded via
-`/api/assets`, which saves a copy under `~/.labler/assets/`); live "print preview" that is
-byte-identical to what feeds out (preview == print). Saved designs live under `~/.labler/designs/<id>/`;
+`/api/assets`, which saves a copy under `~/.labeler/assets/`); live "print preview" that is
+byte-identical to what feeds out (preview == print). Saved designs live under `~/.labeler/designs/<id>/`;
 every print is logged to History with a thumbnail and hardware tape-used stats.
 
-CLI surface (`labler ...`): `status`, `print-image`, `print-text`, `print-qr` (rich/rich-argparse,
-short flags). Web entry point `labler-web`; CLI entry point `labler`.
+CLI surface (`labeler ...`): `status`, `print-image`, `print-text`, `print-qr` (rich/rich-argparse,
+short flags). Web entry point `labeler-web`; CLI entry point `labeler`.
 
 ### SHARED DEPLOYMENT (v0.8.x) — read this before touching storage or logging
 The printer is a **shared, multi-person resource** living in the basement next to
-**munchlax**, which runs the single `labler-web` that owns :9100. Full design +
+**munchlax**, which runs the single `labeler-web` that owns :9100. Full design +
 task tracker: **`specs/central-deployment.md`**.
 
 **The privacy rule is absolute: label content NEVER reaches the server.**
@@ -41,7 +41,7 @@ task tracker: **`specs/central-deployment.md`**.
 |---|---|---|
 | Designs, print history, thumbnails | **client browser (IndexedDB)** | `static/store.js` |
 | Uploaded/pasted bitmaps | **inlined as data URIs** in the display list | decoded in-memory per render, never written |
-| Tape statistics | **server** `~/.labler/stats.jsonl` | the one dataset meant to be shared |
+| Tape statistics | **server** `~/.labeler/stats.jsonl` | the one dataset meant to be shared |
 | Settings | **server**, shared by everyone | properties of the printer, not of a person |
 
 Enforcement (do not weaken any of these):
@@ -52,7 +52,7 @@ Enforcement (do not weaken any of these):
   keyword-only so content cannot slide in.
 - `/api/assets`, `/api/designs*`, `/api/history*` are **gone**, and so is the
   history *write* path. `_read_history()` survives read-only, solely to feed the
-  one-shot `/api/migrate/export` that pulls a pre-0.8.3 `~/.labler/` into a
+  one-shot `/api/migrate/export` that pulls a pre-0.8.3 `~/.labeler/` into a
   browser (without it, upgrading silently loses saved designs).
 - `tests/test_privacy.py` fails if any of this regresses.
 
@@ -63,13 +63,13 @@ directories behind a login (private between people, not from munchlax's admin);
 do not build it pre-emptively.
 
 ### Web app runtime data (code/runtime split)
-- **Code** lives in this repo. **Runtime data** lives under `~/.labler/` (Windows
-  `%USERPROFILE%\.labler\`), created on first run: `settings.json`,
+- **Code** lives in this repo. **Runtime data** lives under `~/.labeler/` (Windows
+  `%USERPROFILE%\.labeler\`), created on first run: `settings.json`,
   `logs/events.jsonl`, `stats.jsonl`. `.venv` rebuilds / re-clones never lose it.
   (`designs/`, `history.jsonl`, `history/`, `assets/` are **legacy** — pre-0.8.3
   leftovers kept only for the migration export.)
-- The web app's `~/.labler/settings.json` is the app authority and is SEPARATE from the CLI's
-  `~/.config/labler/config.json`. Web default host is the IPv4 `192.168.25.219` (the mDNS name
+- The web app's `~/.labeler/settings.json` is the app authority and is SEPARATE from the CLI's
+  `~/.config/labeler/config.json`. Web default host is the IPv4 `192.168.25.219` (the mDNS name
   resolved to IPv6 this session and refused :9100).
 - Printer access is serialized by `_PrintQueue` around a module-level lock (VC-500W = one
   :9100 connection at a time), so browser tabs — and now *people* — can't collide. The
@@ -203,7 +203,7 @@ MIT.
 - **This subproject has its OWN dedicated remote**, separate from the parent `D:\hw` repo:
   `origin → https://github.com/MikeWise2718/labeler-vc500w.git` (branch `main`).
 - **Push by default after every commit** unless told otherwise (standing user preference).
-- Bump `__version__` (in `src/labler/__init__.py` AND `pyproject.toml`) on every code change — the
+- Bump `__version__` (in `src/labeler/__init__.py` AND `pyproject.toml`) on every code change — the
   web header shows the live build, which makes "is my browser seeing the new code?" answerable in two
   seconds. (See the stale-JS lesson below — the header version comes from `/api/ping`, NOT from the
   served `app.js`, so a matching header does NOT prove the JS is fresh.)
@@ -235,7 +235,7 @@ tools/deploy.sh                       # rsync + uv sync + launchd restart + vers
 tools/munchlax/install.sh             # run ON munchlax, once, to install the agent
 ```
 `deploy.sh` verifies that `/api/ping` reports the version it just shipped — "something
-answered" is not proof the new code is live. Runtime data (`~/.labler/`) is never touched
+answered" is not proof the new code is live. Runtime data (`~/.labeler/`) is never touched
 by a deploy.
 
 ## Lessons learned (web app)
@@ -274,9 +274,9 @@ Hard-won, to stop re-paying for them:
    exercises the browser JS, so JS bugs (like #4) sail through green tests. `node --check app.js`
    catches syntax; for logic, reproduce the suspect call in `node -e '...'` (that's how the `toHex(56)`
    crash was pinned). There's opt-in editor debug logging in `app.js` (off by default; enable with
-   `localStorage.setItem('labler_debug','1')`) that traces element positions through add/move/save/load.
+   `localStorage.setItem('labeler_debug','1')`) that traces element positions through add/move/save/load.
 
-7. **Server access log is colorized + tagged `labler`** (a `WSGIRequestHandler` subclass via rich).
+7. **Server access log is colorized + tagged `labeler`** (a `WSGIRequestHandler` subclass via rich).
    Polling routes (`/api/status`, `/api/ping`) are dimmed so real traffic stands out. If you don't
    recognize which app is logging to a terminal, that prefix is the tell.
 
@@ -290,33 +290,33 @@ Hard-won, to stop re-paying for them:
 9. **Removing an endpoint is not the same as removing the data path.** When designs and
    history moved to the browser (v0.8.3), deleting `/api/history*` looked like the job was
    done — but `_append_history()` was still writing `name` + `display_list` to
-   `~/.labler/history.jsonl` on **every print**. The leak was invisible because nothing
+   `~/.labeler/history.jsonl` on **every print**. The leak was invisible because nothing
    *served* it. When relocating data for privacy, grep for the **writers**, not just the
    readers, and assert the file is absent in a test (`test_print_flow_monkeypatched`).
 
-10. **A stale `labler-web` from an earlier session will masquerade as a bug in your new
+10. **A stale `labeler-web` from an earlier session will masquerade as a bug in your new
     code.** Chasing a "migration doesn't run" failure cost several turns: every endpoint
     including `/api/ping` was hanging, and the cause was two orphaned server processes
     (one from a *previous session*) fighting over :5000. **Symptom: `curl` hangs on
     endpoints that have no reason to be slow → check for duplicate processes FIRST**
-    (`Get-CimInstance Win32_Process | Where CommandLine -like '*labler*'`). Related to
+    (`Get-CimInstance Win32_Process | Where CommandLine -like '*labeler*'`). Related to
     lesson #11 below — always kill your test server when done.
 
-11. **A running `labler-web` locks `.venv/Scripts/labler-web.exe`, so `uv run` can't reinstall.** If a
-   background/dev server is up when you next `run.bat` (or `uv run labler-web`), the version-bumped
+11. **A running `labeler-web` locks `.venv/Scripts/labeler-web.exe`, so `uv run` can't reinstall.** If a
+   background/dev server is up when you next `run.bat` (or `uv run labeler-web`), the version-bumped
    package fails to install with `os error 32` (file in use). Kill the stray server first
-   (`Get-CimInstance Win32_Process ... CommandLine -like '*labler-web*'` → `Stop-Process`). When
+   (`Get-CimInstance Win32_Process ... CommandLine -like '*labeler-web*'` → `Stop-Process`). When
    running a server yourself to test, **shut it down when done** — don't leave it holding the exe. To
    run the test suite while a server is up, call `.venv/Scripts/python.exe -m pytest` directly (skips
    the `uv` rebuild that would touch the locked exe).
 
-12. **Port 5000 collides with `chgeo` (and any other Flask app) — labler now defaults to 5001.**
-   `D:\python\chgeo` runs `flask --app chgeo run`, which binds Flask's default **5000**. labler used
-   to default to 5000 too, so opening `localhost:5000` showed **chgeo**, not labler — its `/api/status`
+12. **Port 5000 collides with `chgeo` (and any other Flask app) — labeler now defaults to 5001.**
+   `D:\python\chgeo` runs `flask --app chgeo run`, which binds Flask's default **5000**. labeler used
+   to default to 5000 too, so opening `localhost:5000` showed **chgeo**, not labeler — its `/api/status`
    and `/api/queue` 404'd, the Print tab hung on "waiting for the printer…", and `run.bat` silently
    failed to bind. Cost a confusing stretch 2026-08-04 before `curl .../` revealed `<title>chgeo</title>`.
-   **Diagnosis tell: `curl http://localhost:5000/api/ping` → `version` that isn't labler's (chgeo was
+   **Diagnosis tell: `curl http://localhost:5000/api/ping` → `version` that isn't labeler's (chgeo was
    `0.20.1`), or the page `<title>` is another app.** Fix already applied: `app.py` default port is
-   **5001** and `run.bat` documents it. When a labler endpoint 404s or shows a wrong version, check
-   **which app answers the port** before suspecting labler code (related to lesson #10 — wrong/stale
+   **5001** and `run.bat` documents it. When a labeler endpoint 404s or shows a wrong version, check
+   **which app answers the port** before suspecting labeler code (related to lesson #10 — wrong/stale
    server masquerading as a bug).

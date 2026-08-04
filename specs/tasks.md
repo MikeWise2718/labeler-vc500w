@@ -1,4 +1,4 @@
-# Labler-VC500W — Task List
+# Labeler-VC500W — Task List
 
 Master task tracker for building the VC-500W label tool. Design rationale lives in
 [`specs/design.md`](design.md); device facts and gotchas in [`../CLAUDE.md`](../CLAUDE.md).
@@ -32,8 +32,8 @@ Last updated: 2026-07-04 (through v0.7.5 — CLI + web app shipped).
 | # | Task | Status | Notes |
 |---|------|:--:|------|
 | 1.1 | `uv` project: `pyproject.toml`, deps (pillow, qrcode, rich, rich-argparse) | ✅ | `uv sync` ok; web/dev extras |
-| 1.2 | `src/labler/__init__.py` with `__version__` | ✅ | `0.1.0` |
-| 1.3 | Console entry point `labler = labler.cli:main` | ✅ | `labler --version/--help/status` run |
+| 1.2 | `src/labeler/__init__.py` with `__version__` | ✅ | `0.1.0` |
+| 1.3 | Console entry point `labeler = labeler.cli:main` | ✅ | `labeler --version/--help/status` run |
 | 1.4 | `errors.py` — typed exceptions (ConnectionBusy, PrinterError, MediaError) | ✅ | |
 | 1.5 | `config.py` — host default, media table (25/50 mm), settings load/save | ✅ | 25→312px, 50→624px verified |
 | 1.6 | Push scaffold + design to `origin` | ☐ | |
@@ -53,10 +53,10 @@ Last updated: 2026-07-04 (through v0.7.5 — CLI + web app shipped).
 
 | # | Task | Status | Notes |
 |---|------|:--:|------|
-| 3.1 | `labler status` | ✅ | live, rich table |
-| 3.2 | `labler print-image FILE` (+ `-mw -m -ct -r -cr`) | ✅ | `[resolved]` 2.2 fixed |
-| 3.3 | `labler print-text "..."` | ✅ | `[resolved]` 2.2 fixed |
-| 3.4 | `labler print-qr "..."` | ✅ | `[resolved]` 2.2 fixed |
+| 3.1 | `labeler status` | ✅ | live, rich table |
+| 3.2 | `labeler print-image FILE` (+ `-mw -m -ct -r -cr`) | ✅ | `[resolved]` 2.2 fixed |
+| 3.3 | `labeler print-text "..."` | ✅ | `[resolved]` 2.2 fixed |
+| 3.4 | `labeler print-qr "..."` | ✅ | `[resolved]` 2.2 fixed |
 | 3.5 | `--dry-run` / `--output` (render only, no print) | ✅ | works; flags accepted pre/post command |
 
 ## Phase 4 — Verify & test
@@ -80,7 +80,7 @@ All done — the full app shipped and the ongoing feature record is the changelo
 | 5.3 | `POST /api/print` (display-list → JPEG + params) | ✅ | serialized printer lock |
 | 5.4 | `GET/POST /api/settings` persisted server-side | ✅ | + `custom_colors` |
 | 5.5 | Editor: elements, rotate, 25/50 mm, live preview | ✅ | text/image/border; multiline; bold/italic; bg color; paste |
-| 5.6 | Runtime-data split (`~/.labler/`) + JSONL event logging | ✅ | |
+| 5.6 | Runtime-data split (`~/.labeler/`) + JSONL event logging | ✅ | |
 | 5.7 | Mobile-responsive CSS | ✅ | |
 
 ## Phase 6 — Editor depth (post-MVP) ✅
@@ -98,5 +98,5 @@ default-to-Edit-tab. See `specs/flask-app.md` changelog for details and versions
   A static reservation on the Fritzbox is still worth doing so the lease can't move.
 - **Default font** — bundle one, or use a system font? → **Resolved:** use system fonts via a family
   registry (`render.FONT_FAMILIES`); the web app defaults to Arial with a cross-platform fallback.
-- **Repo name mismatch** — folder `labler-vc5002` vs. remote `labeler-vc500w`. → Still cosmetic; the
+- **Repo name mismatch** — folder `labeler-vc5002` vs. remote `labeler-vc500w`. → Still cosmetic; the
   remote is `github.com/MikeWise2718/labeler-vc500w`. Left as-is.

@@ -1,6 +1,6 @@
 """Tests for status.xml parsing and the ready property."""
 
-from labler.status import Status
+from labeler.status import Status
 
 # A real reply captured from the printer (2026-06-14), envelope + body concatenated.
 REAL_REPLY = """<?xml version="1.0" encoding="UTF-8"?>

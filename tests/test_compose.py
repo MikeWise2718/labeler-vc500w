@@ -1,4 +1,4 @@
-"""Tests for the display-list compositor (src/labler/compose.py)."""
+"""Tests for the display-list compositor (src/labeler/compose.py)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import io
 import pytest
 from PIL import Image
 
-from labler import compose
-from labler.config import media_for
+from labeler import compose
+from labeler.config import media_for
 
 
 def _decode(data: bytes) -> Image.Image:

@@ -4,10 +4,10 @@
   launchd agent for the shared VC-500W label server on munchlax.
 
   Install (see tools/munchlax/install.sh, which does this for you):
-    cp tools/munchlax/com.labler.web.plist ~/Library/LaunchAgents/
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.labler.web.plist
+    cp tools/munchlax/com.labeler.web.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.labeler.web.plist
   Restart:
-    launchctl kickstart -k gui/$(id -u)/com.labler.web
+    launchctl kickstart -k gui/$(id -u)/com.labeler.web
 
   NOTE: replace __HOME__ with the real home directory — launchd does not expand
   ~ or $HOME in these paths. install.sh substitutes it.
@@ -15,7 +15,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.labler.web</string>
+    <string>com.labeler.web</string>
 
     <key>ProgramArguments</key>
     <array>
@@ -23,7 +23,7 @@
         <string>run</string>
         <string>--extra</string>
         <string>web</string>
-        <string>labler-web</string>
+        <string>labeler-web</string>
         <!-- 0.0.0.0 so the other machines in the house can reach it; this is the
              whole point of the central deployment. -->
         <string>--bind</string>
@@ -33,7 +33,7 @@
     </array>
 
     <key>WorkingDirectory</key>
-    <string>__HOME__/projects/labler-vc5002</string>
+    <string>__HOME__/projects/labeler-vc5002</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -48,9 +48,9 @@
     <integer>10</integer>
 
     <key>StandardOutPath</key>
-    <string>__HOME__/.labler/logs/stdout.log</string>
+    <string>__HOME__/.labeler/logs/stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>__HOME__/.labler/logs/stderr.log</string>
+    <string>__HOME__/.labeler/logs/stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

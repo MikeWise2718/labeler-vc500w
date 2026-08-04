@@ -1,8 +1,8 @@
-"""Command-line interface for labler.
+"""Command-line interface for labeler.
 
 Thin layer: parse args, call the core, render results with rich. Full command
 behaviour lands in Phase 3; this scaffold wires up argparse, --version, and the
-subcommand skeleton so the `labler` entry point is runnable.
+subcommand skeleton so the `labeler` entry point is runnable.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from rich_argparse import RichHelpFormatter
 
 from . import __version__, protocol, render
 from .config import SUPPORTED_WIDTHS, Settings
-from .errors import LablerError
+from .errors import LabelerError
 
 console = Console()
 
@@ -36,11 +36,11 @@ def _parse_crop(s: str | None):
 def build_parser() -> argparse.ArgumentParser:
     s = Settings.load()
     p = argparse.ArgumentParser(
-        prog="labler",
+        prog="labeler",
         description="Print labels directly to a Brother VC-500W over the LAN.",
         formatter_class=RichHelpFormatter,
     )
-    p.add_argument("-V", "--version", action="version", version=f"labler {__version__}")
+    p.add_argument("-V", "--version", action="version", version=f"labeler {__version__}")
 
     # Common flags accepted both before and after the subcommand. The subparser copies
     # use SUPPRESS so that omitting them after the command doesn't clobber a value given
@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             return _cmd_status(args)
         return _cmd_print(args)
-    except LablerError as e:
+    except LabelerError as e:
         console.print(f"[red]error:[/] {e}")
         return 1
     except FileNotFoundError as e:

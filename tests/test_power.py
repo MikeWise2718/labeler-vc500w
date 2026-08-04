@@ -1,4 +1,4 @@
-"""Tests for remote power-cycle recovery (src/labler/power.py).
+"""Tests for remote power-cycle recovery (src/labeler/power.py).
 
 A wedged VC-500W only clears with a power-cycle (CLAUDE.md GOTCHAs). Once the
 printer lives in the basement next to munchlax, nobody is standing there to pull
@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from labler import power
-from labler.errors import LablerError
-from labler.status import Status
+from labeler import power
+from labeler.errors import LabelerError
+from labeler.status import Status
 
 
 class _FakeShelly:
@@ -29,7 +29,7 @@ class _FakeShelly:
 
     def __call__(self, host, method, params=""):
         if self.fail:
-            raise LablerError(f"Shelly at {host} unreachable: boom")
+            raise LabelerError(f"Shelly at {host} unreachable: boom")
         self.calls.append(f"{method}?{params}" if params else method)
         if method == "Switch.GetStatus":
             return '{"id":0,"output":%s,"apower":1.2}' % ("true" if self.output else "false")
@@ -90,7 +90,7 @@ def test_power_cycle_raises_when_shelly_unreachable(monkeypatch):
     """A failed power-cycle must surface, not pretend to have worked — the printer
     is just as wedged as before."""
     monkeypatch.setattr(power, "_rpc", _FakeShelly(fail=True))
-    with pytest.raises(LablerError, match="unreachable"):
+    with pytest.raises(LabelerError, match="unreachable"):
         power.power_cycle("1.2.3.4", 0, sleep=lambda s: None)
 
 

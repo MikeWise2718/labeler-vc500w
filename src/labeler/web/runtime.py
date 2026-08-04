@@ -1,9 +1,9 @@
 """Runtime data layout + helpers for the web app.
 
-All mutable state lives under ~/.labler/ (NOT in the code repo) per the workspace
+All mutable state lives under ~/.labeler/ (NOT in the code repo) per the workspace
 code/runtime split rule:
 
-    ~/.labler/
+    ~/.labeler/
       settings.json        # server-side app settings
       logs/events.jsonl    # structured event log (STATISTICS ONLY — see log_event)
       designs/<id>/        # saved display-lists + preview thumbnails
@@ -14,7 +14,7 @@ Bitmaps are inlined as data URIs by the client and never stored server-side; the
 event log is allowlist-filtered. See specs/central-deployment.md.
 
 The directory is created on first access. Settings here are the web app's
-authority and are a superset of the CLI's ~/.config/labler/config.json.
+authority and are a superset of the CLI's ~/.config/labeler/config.json.
 """
 
 from __future__ import annotations
@@ -26,13 +26,13 @@ from pathlib import Path
 
 from ..config import DEFAULT_HOST, FALLBACK_HOST  # noqa: F401  (re-exported for callers)
 
-RUNTIME_DIR = Path.home() / ".labler"
+RUNTIME_DIR = Path.home() / ".labeler"
 SETTINGS_FILE = RUNTIME_DIR / "settings.json"
 LOG_DIR = RUNTIME_DIR / "logs"
 EVENTS_FILE = LOG_DIR / "events.jsonl"
 # ASSETS_DIR was removed in v0.8.1 — uploaded bitmaps are label content and the
 # printer is now shared, so images are inlined as data URIs instead of stored here.
-# An existing ~/.labler/assets/ from an older version is left alone (not deleted);
+# An existing ~/.labeler/assets/ from an older version is left alone (not deleted);
 # it is dead data the user can remove at leisure.
 DESIGNS_DIR = RUNTIME_DIR / "designs"
 HISTORY_FILE = RUNTIME_DIR / "history.jsonl"
@@ -52,7 +52,7 @@ def now_iso() -> str:
 
 @dataclass
 class WebSettings:
-    """Server-side app settings, persisted to ~/.labler/settings.json.
+    """Server-side app settings, persisted to ~/.labeler/settings.json.
 
     `host` defaults to the IPv4 address, NOT the mDNS name: this session the mDNS
     name resolved to IPv6 and refused :9100. The IPv4 lease is the reliable target.
@@ -67,7 +67,7 @@ class WebSettings:
     units: str = "in"                  # in | cm  (display only)
     custom_colors: list[str] = field(default_factory=list)  # extra preset swatches (hex)
     # Shelly smart outlet the printer is plugged into, for remote wedge recovery.
-    # Empty host = feature disabled (no outlet wired up yet). See labler/power.py.
+    # Empty host = feature disabled (no outlet wired up yet). See labeler/power.py.
     shelly_host: str = ""              # e.g. "192.168.25.184"
     shelly_outlet: int = 0             # 0-3 on a Power Strip 4 Gen4
 
@@ -151,7 +151,7 @@ def record_print_stats(*, host: str, media_mm: int | None, mode: str | None,
                        remain_after_in: float | None = None,
                        tape_used_in: float | None = None,
                        jpeg_bytes: int | None = None) -> None:
-    """Append one statistics record per print attempt to ~/.labler/stats.jsonl.
+    """Append one statistics record per print attempt to ~/.labeler/stats.jsonl.
 
     Keyword-only and explicitly typed so a caller cannot accidentally pass label
     content through. Never raises into the print path.
@@ -212,7 +212,7 @@ def summarise_stats(records: list[dict]) -> dict:
 
 
 def log_event(event: str, message: str = "", **fields) -> None:
-    """Append one JSON object per line to ~/.labler/logs/events.jsonl.
+    """Append one JSON object per line to ~/.labeler/logs/events.jsonl.
 
     Always includes timestamp, event (dotted name), message; plus any extra fields
     that survive LOG_FIELD_ALLOWLIST — label content is dropped, not written.

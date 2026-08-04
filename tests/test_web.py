@@ -1,6 +1,6 @@
 """Integration tests for the Flask app — exercised via the test client with the
 printer protocol monkeypatched (no real hardware). Runtime dir is redirected to a
-tmp_path so tests never touch ~/.labler/."""
+tmp_path so tests never touch ~/.labeler/."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ import json
 import pytest
 from PIL import Image
 
-from labler.web import app as webapp
-from labler.web import runtime
-from labler.status import Status
+from labeler.web import app as webapp
+from labeler.web import runtime
+from labeler.status import Status
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ def test_render_honors_bold_italic(client):
     plain = png(False, False)
     bold = png(True, False)
     # Bold changes the rendered glyphs -> different bytes (skip if Arial absent).
-    from labler import render
+    from labeler import render
     if render._try_truetype("arialbd.ttf", 16) is not None:
         assert bold != plain
 
@@ -232,7 +232,7 @@ def test_about_endpoint(client):
 def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert b"Labler" in r.data
+    assert b"Labeler" in r.data
 
 
 def test_stats_endpoint_empty(client):
@@ -242,8 +242,8 @@ def test_stats_endpoint_empty(client):
 
 def test_stats_endpoint_after_print(client, monkeypatch):
     """A print records a stats row; /api/stats aggregates it and leaks no content."""
-    from labler import protocol
-    from labler.status import Status
+    from labeler import protocol
+    from labeler.status import Status
 
     def fake_status(host, **kw):
         return Status(raw={}, print_state="IDLE", print_job_stage="READY FOR PRINT",
@@ -272,7 +272,7 @@ def test_stats_endpoint_after_print(client, monkeypatch):
 
 def test_migrate_export_returns_legacy_designs_and_history(client):
     """Upgrading must not silently lose saved designs. The one-shot export hands
-    a pre-0.8.3 ~/.labler/ to the browser for import into IndexedDB."""
+    a pre-0.8.3 ~/.labeler/ to the browser for import into IndexedDB."""
     runtime.ensure_runtime()
     # a legacy saved design, as v0.7.x wrote it
     ddir = runtime.DESIGNS_DIR / "my-label"
@@ -324,8 +324,8 @@ def test_queue_endpoint_idle(client):
 
 def test_print_reports_queue_position(client, monkeypatch):
     """A print that did not wait reports queued_behind=0."""
-    from labler import protocol
-    from labler.status import Status
+    from labeler import protocol
+    from labeler.status import Status
     monkeypatch.setattr(protocol, "get_status",
                         lambda h, **k: Status(raw={}, print_state="IDLE",
                                               print_job_stage="READY", print_job_error="NONE",
@@ -346,8 +346,8 @@ def test_concurrent_prints_serialize_through_http(client, monkeypatch):
     """
     import threading
     import time
-    from labler import protocol
-    from labler.status import Status
+    from labeler import protocol
+    from labeler.status import Status
 
     concurrent = 0
     max_concurrent = 0
@@ -405,7 +405,7 @@ def test_powercycle_without_configured_outlet_is_a_clear_error(client):
 
 
 def test_powercycle_happy_path(client, monkeypatch):
-    from labler import power
+    from labeler import power
     calls = []
     monkeypatch.setattr(power, "power_cycle",
                         lambda host, outlet, **kw: calls.append((host, outlet))
@@ -419,11 +419,11 @@ def test_powercycle_happy_path(client, monkeypatch):
 
 
 def test_powercycle_surfaces_shelly_failure(client, monkeypatch):
-    from labler import power
-    from labler.errors import LablerError
+    from labeler import power
+    from labeler.errors import LabelerError
 
     def boom(host, outlet, **kw):
-        raise LablerError("Shelly at 1.2.3.4 unreachable: timed out")
+        raise LabelerError("Shelly at 1.2.3.4 unreachable: timed out")
 
     monkeypatch.setattr(power, "power_cycle", boom)
     client.post("/api/settings", json={"shelly_host": "1.2.3.4", "shelly_outlet": 0})
@@ -434,7 +434,7 @@ def test_powercycle_surfaces_shelly_failure(client, monkeypatch):
 
 def test_powercycle_does_not_log_label_content(client, monkeypatch):
     """The power-cycle log line is statistics only, like everything else."""
-    from labler import power
+    from labeler import power
     monkeypatch.setattr(power, "power_cycle",
                         lambda host, outlet, **kw: {"host": host, "outlet": outlet,
                                                     "was_on": True, "off_seconds": 8.0})

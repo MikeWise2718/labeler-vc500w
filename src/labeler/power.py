@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
-from .errors import LablerError
+from .errors import LabelerError
 
 # How long to leave the outlet off. The VC-500W needs its capacitors to drain for
 # the power-cycle to actually reset the controller; a brief blip can leave it in
@@ -34,7 +34,7 @@ HTTP_TIMEOUT = 5.0
 
 
 def _rpc(host: str, method: str, params: str = "") -> str:
-    """One Shelly RPC GET. Returns the raw body; raises LablerError on failure."""
+    """One Shelly RPC GET. Returns the raw body; raises LabelerError on failure."""
     url = f"http://{host}/rpc/{method}"
     if params:
         url += f"?{params}"
@@ -42,7 +42,7 @@ def _rpc(host: str, method: str, params: str = "") -> str:
         with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT) as r:
             return r.read().decode("utf-8", "replace")
     except (urllib.error.URLError, OSError, ValueError) as e:
-        raise LablerError(f"Shelly at {host} unreachable: {e}") from e
+        raise LabelerError(f"Shelly at {host} unreachable: {e}") from e
 
 
 def outlet_state(host: str, outlet: int) -> bool:
@@ -62,7 +62,7 @@ def power_cycle(host: str, outlet: int, *, off_seconds: float = OFF_SECONDS,
 
     `sleep` is injectable so tests do not actually wait 8 seconds.
 
-    Returns a dict describing what happened. Raises LablerError if the Shelly is
+    Returns a dict describing what happened. Raises LabelerError if the Shelly is
     unreachable — the caller should surface that rather than pretend it worked,
     since a failed power-cycle leaves the printer just as wedged as before.
     """

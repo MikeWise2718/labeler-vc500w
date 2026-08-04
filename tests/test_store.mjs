@@ -16,7 +16,7 @@ const require = createRequire(import.meta.url);
 // Install a fake IndexedDB into the global scope before loading store.js.
 await import("fake-indexeddb/auto");
 
-const store = require("../src/labler/web/static/store.js");
+const store = require("../src/labeler/web/static/store.js");
 
 // Each test gets a clean DB: delete and let store.js reopen lazily.
 async function reset() {
@@ -25,7 +25,7 @@ async function reset() {
   await Promise.all(designs.map(d => store.deleteDesign(d.id)));
   const history = await store.listHistory();
   await Promise.all(history.map(h => store.deleteHistory(h.id)));
-  store.markMigrationDone === undefined || localStorage.removeItem("labler_migrated_v083");
+  store.markMigrationDone === undefined || localStorage.removeItem("labeler_migrated_v083");
 }
 
 // localStorage shim — fake-indexeddb doesn't provide one.
@@ -135,7 +135,7 @@ test("export then import restores designs and history", async () => {
   await store.addHistory({ name: "Printed", elements: [] },
                          { ok: true, entry: "h1", tape_used_in: 2 }, null);
   const dump = await store.exportAll();
-  assert.equal(dump.format, "labler-export");
+  assert.equal(dump.format, "labeler-export");
   assert.equal(dump.designs.length, 1);
   assert.equal(dump.history.length, 1);
 
@@ -166,7 +166,7 @@ test("import derives an id for id-less designs instead of dropping them", async 
   // derived from the name and the design is stored.
   await reset();
   const counts = await store.importAll({
-    format: "labler-export", version: 1,
+    format: "labeler-export", version: 1,
     designs: [{ id: "ok-one", name: "Fine" }, { name: "No Id Here", display_list: {} }],
     history: [],
   });
@@ -181,7 +181,7 @@ test("import count reflects what stored, not the array length", async () => {
   // A completely unusable entry (not an object) is not counted as stored.
   await reset();
   const counts = await store.importAll({
-    format: "labler-export", version: 1,
+    format: "labeler-export", version: 1,
     designs: [{ id: "real", name: "Real" }, null, "garbage"],
     history: [],
   });
@@ -204,7 +204,7 @@ test("history is trimmed to MAX_HISTORY_ENTRIES", async () => {
 
 test("migration imports legacy server data exactly once", async () => {
   await reset();
-  localStorage.removeItem("labler_migrated_v083");
+  localStorage.removeItem("labeler_migrated_v083");
   let calls = 0;
   const fakeFetch = async () => {
     calls++;
@@ -226,7 +226,7 @@ test("migration imports legacy server data exactly once", async () => {
 
 test("migration tolerates a server with no legacy data", async () => {
   await reset();
-  localStorage.removeItem("labler_migrated_v083");
+  localStorage.removeItem("labeler_migrated_v083");
   const r = await store.runMigration(async () => ({ ok: true, designs: [], history: [] }));
   assert.equal(r, null);
   assert.equal(store.migrationDone(), true);   // don't ask again
@@ -234,7 +234,7 @@ test("migration tolerates a server with no legacy data", async () => {
 
 test("migration tolerates a missing endpoint", async () => {
   await reset();
-  localStorage.removeItem("labler_migrated_v083");
+  localStorage.removeItem("labeler_migrated_v083");
   const r = await store.runMigration(async () => { throw new Error("404"); });
   assert.equal(r, null);
   assert.equal(store.migrationDone(), false);  // endpoint may come back; retry later

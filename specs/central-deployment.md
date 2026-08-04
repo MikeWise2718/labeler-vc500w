@@ -17,7 +17,7 @@ dies mid-job or releases early **wedges the printer in BUSY/PRINTING until it is
 power-cycled** (see `CLAUDE.md` GOTCHAs). With multiple clients this is not a
 theoretical risk — it is the default outcome unless a single process owns the socket.
 
-Therefore: **one `labler-web` process is the sole owner of :9100.** Everyone else talks to
+Therefore: **one `labeler-web` process is the sole owner of :9100.** Everyone else talks to
 it over HTTP. This is already how the app works (`_printer_lock`, a module-level
 `threading.Lock` in `web/app.py:34`) — it is correct precisely as long as there is one
 server. Multi-client is "run that one server somewhere central," not "add a queue daemon."
@@ -55,7 +55,7 @@ Shelly, which does not need a host next to the printer.
 |---|---|---|
 | Print history + thumbnails | **Client browser (IndexedDB)** | Images and label text are private to the person who printed them |
 | Saved designs | **Client browser (IndexedDB)** | Same |
-| Tape statistics (used, remain, timestamp, media, ok/fail) | **Server** (`~/.labler/stats.jsonl`) | "Who is burning the roll, when do we reorder" is inherently a shared question, and carries no label content |
+| Tape statistics (used, remain, timestamp, media, ok/fail) | **Server** (`~/.labeler/stats.jsonl`) | "Who is burning the roll, when do we reorder" is inherently a shared question, and carries no label content |
 | Settings | **Server**, shared | Host/media/cut are properties of the shared printer, not of a person |
 
 Thumbnails are PNG blobs, so **IndexedDB, not localStorage** (quota).
@@ -67,7 +67,7 @@ different histories, and clearing site data wipes it with no backup. This is the
 "no images on the server" and is accepted deliberately.
 
 If this becomes annoying, the fallback is per-user server-side directories
-(`~/.labler/users/<user>/`) behind a login — private *between people*, but no longer
+(`~/.labeler/users/<user>/`) behind a login — private *between people*, but no longer
 private from whoever administers munchlax. The storage layer is small enough that
 switching later is cheap. Do not build it pre-emptively.
 
@@ -97,7 +97,7 @@ Add a test that asserts a disallowed field is dropped rather than written.
 
 ### 2. Client-side history + designs (IndexedDB)
 
-Move history and designs out of `~/.labler/` into browser storage. Server-side endpoints
+Move history and designs out of `~/.labeler/` into browser storage. Server-side endpoints
 to remove or repoint: `/api/history*`, `/api/designs*`, `/api/history_thumb`,
 `/api/design_preview`.
 
@@ -131,9 +131,9 @@ a wedge blocks everyone and nobody is next to it. Pair the printer with a Shelly
 
 ### 6. launchd deploy on munchlax
 
-Per global conventions: code to `~/projects/labler-vc5002/`, plist for
-`com.labler.web`, restart via
-`launchctl kickstart -k gui/$(id -u)/com.labler.web`. A `tools/deploy.sh` doing rsync +
+Per global conventions: code to `~/projects/labeler-vc5002/`, plist for
+`com.labeler.web`, restart via
+`launchctl kickstart -k gui/$(id -u)/com.labeler.web`. A `tools/deploy.sh` doing rsync +
 restart follows the pokeflute pattern.
 
 ## Task tracker
@@ -160,7 +160,7 @@ restart follows the pokeflute pattern.
 ## Execution plan
 
 Ordered by dependency and by risk. Each step is independently committable and leaves the
-app working. Version bumps per repo convention (`src/labler/__init__.py` + `pyproject.toml`
+app working. Version bumps per repo convention (`src/labeler/__init__.py` + `pyproject.toml`
 in the same commit).
 
 ### Phase A — privacy (server-side, no deploy needed)
@@ -180,7 +180,7 @@ current offenders.
 Tests: data URI renders identically to the old path-based asset; oversized URI rejected.
 
 **A3. Stats stream** → v0.8.2
-`~/.labler/stats.jsonl` — one record per print: timestamp, host, media, mode, cut,
+`~/.labeler/stats.jsonl` — one record per print: timestamp, host, media, mode, cut,
 remain_before/after, tape_used_in, ok, error kind. No label content, enforced by A1's
 allowlist. Add `/api/stats` (aggregate: tape used per day/week, roll burn-down).
 
@@ -193,7 +193,7 @@ promise-based helper; no external library.
 **B2. Cut over history + designs** → v0.8.4
 Repoint the History and Edit tabs at IndexedDB. Remove server endpoints
 `/api/history*`, `/api/designs*`, `/api/history_thumb`, `/api/design_preview`, and the
-`~/.labler/designs|history` trees.
+`~/.labeler/designs|history` trees.
 **Migration:** on first load, if the server still has designs/history, offer a one-time
 "import my existing designs into this browser" action, then let the server copies be
 deleted. Without this, existing saved designs silently vanish.
@@ -223,11 +223,11 @@ Needs the Shelly's outlet assignment — ask when we get here.
 ### Phase D — deploy
 
 **D1. `tools/deploy.sh`** → v0.9.0
-rsync to `munchlax:~/projects/labler-vc5002/`, `uv sync`, launchd restart. Pokeflute
+rsync to `munchlax:~/projects/labeler-vc5002/`, `uv sync`, launchd restart. Pokeflute
 pattern.
 
-**D2. launchd plist** `tools/munchlax/com.labler.web.plist`
-KeepAlive, log to `~/.labler/logs/`, bind `0.0.0.0:5000` so other machines can reach it.
+**D2. launchd plist** `tools/munchlax/com.labeler.web.plist`
+KeepAlive, log to `~/.labeler/logs/`, bind `0.0.0.0:5000` so other machines can reach it.
 
 **D3. Docs pass**
 `CLAUDE.md` (new deployment reality, privacy model, retire the single-user assumptions),

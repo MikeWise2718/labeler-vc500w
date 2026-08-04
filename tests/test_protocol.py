@@ -4,8 +4,8 @@ import socket
 
 import pytest
 
-from labler import protocol
-from labler.errors import ConnectionBusy, PrinterError
+from labeler import protocol
+from labeler.errors import ConnectionBusy, PrinterError
 
 
 class FakeSocket:

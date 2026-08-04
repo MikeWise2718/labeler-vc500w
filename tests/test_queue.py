@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from labler.web.app import _PrintQueue
+from labeler.web.app import _PrintQueue
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-# Labler-VC500W
+# Labeler-VC500W
 
 A program to print labels **directly** to a Brother **VC-500W** ZINK (Zero-Ink) full-color
 label printer over the network — bypassing Brother's official desktop/mobile software, which is
@@ -17,13 +17,13 @@ clunky and gets in the way for quick, scriptable label printing.
 uv sync                      # install (Python ≥ 3.10)
 
 # CLI
-uv run labler status                         # query the printer
-uv run labler print-text "Hello" -mw 25      # print text on 25 mm tape
-uv run labler print-image logo.png -mw 25
-uv run labler print-qr "https://example.com"
+uv run labeler status                         # query the printer
+uv run labeler print-text "Hello" -mw 25      # print text on 25 mm tape
+uv run labeler print-image logo.png -mw 25
+uv run labeler print-qr "https://example.com"
 
 # Web label designer (6-tab UI)
-uv run labler-web            # or run.bat   →  http://localhost:5000
+uv run labeler-web            # or run.bat   →  http://localhost:5000
 ```
 
 The web app is the richer surface and opens on the **Edit** tab: a display-list editor (text / image
@@ -38,7 +38,7 @@ tape-used stats.
 ## Shared deployment
 
 The printer is a **shared resource**: it sits in the basement next to `munchlax`, which runs the one
-`labler-web` instance that everybody points a browser at. This is not merely convenient — the
+`labeler-web` instance that everybody points a browser at. This is not merely convenient — the
 VC-500W accepts **exactly one TCP connection on :9100 at a time**, and a client that dies mid-job
 wedges it until someone power-cycles it. Exactly one process may own the printer.
 
@@ -65,10 +65,10 @@ instead of hanging silently, and if the printer wedges, **Device → Power-cycle
 a Shelly smart outlet (configure it in Settings; blank = disabled) rather than requiring a trip to
 the basement.
 
-**Code vs. runtime split:** code lives in this repo; server-side state lives under `~/.labler/`
-(Windows `%USERPROFILE%\.labler\`) — `settings.json`, `logs/events.jsonl`, `stats.jsonl`. `.venv`
+**Code vs. runtime split:** code lives in this repo; server-side state lives under `~/.labeler/`
+(Windows `%USERPROFILE%\.labeler\`) — `settings.json`, `logs/events.jsonl`, `stats.jsonl`. `.venv`
 rebuilds and re-clones never lose it. The web app's settings are separate from the CLI's
-`~/.config/labler/config.json`.
+`~/.config/labeler/config.json`.
 
 ---
 
@@ -172,18 +172,18 @@ protocol is trivial (XML + JPEG to a TCP port), a small CLI gives us:
 ## Project layout
 
 ```
-src/labler/
+src/labeler/
   protocol.py     raw XML+JPEG over :9100 — lock/print/status (the verified wire core)
   render.py       image/text/QR → print-ready JPEG; font families + bold/italic resolver
   compose.py      display-list compositor (stack text/image/border, rotate, measure)
   status.py       parse the status.xml reply
   config.py       media table (widths → px), host defaults
-  cli.py          `labler` CLI (status / print-image / print-text / print-qr)
+  cli.py          `labeler` CLI (status / print-image / print-text / print-qr)
   power.py        Shelly outlet power-cycle + wedge fingerprint (remote recovery)
   web/
     app.py        Flask factory + JSON API (/api/render, /print, /queue, /stats, /fonts, …)
                   plus _PrintQueue: serializes the printer, reports queue position
-    runtime.py    ~/.labler/ layout, WebSettings, allowlisted event log, stats stream
+    runtime.py    ~/.labeler/ layout, WebSettings, allowlisted event log, stats stream
     static/app.js   vanilla-JS SPA (no build step)
     static/store.js client-side designs + history (IndexedDB), export/import, migration
     templates/    dark-theme SPA shell

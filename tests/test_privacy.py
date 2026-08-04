@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from labler.web import runtime
+from labeler.web import runtime
 
 
 @pytest.fixture
@@ -220,6 +220,6 @@ def test_read_stats_skips_torn_line(statsfile):
 
 def test_stats_missing_tape_value_does_not_break_totals(statsfile):
     runtime.record_print_stats(host="h", media_mm=25, mode="vivid", cut="full",
-                               ok=False, error_kind="LablerError")   # no tape figures
+                               ok=False, error_kind="LabelerError")   # no tape figures
     s = runtime.summarise_stats(runtime.read_stats())
     assert s["prints"] == 1 and s["tape_used_in"] == 0.0

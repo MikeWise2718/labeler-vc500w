@@ -13,7 +13,7 @@
 // Everything here is DOM-free except openDB(); the record-shaping helpers are pure
 // so they can be exercised under `node -e` without a browser (CLAUDE.md lesson #6).
 
-const DB_NAME = "labler";
+const DB_NAME = "labeler";
 const DB_VERSION = 1;
 const STORE_DESIGNS = "designs";
 const STORE_HISTORY = "history";
@@ -166,14 +166,14 @@ async function trimHistory() {
 
 async function exportAll() {
   const [designs, history] = await Promise.all([listDesigns(), listHistory()]);
-  return { format: "labler-export", version: 1,
+  return { format: "labeler-export", version: 1,
            exported: new Date().toISOString(), designs, history };
 }
 
 // Pure: validate and normalise an uploaded export blob. Throws on garbage.
 function parseExport(obj) {
   if (!obj || typeof obj !== "object") throw new Error("not an export file");
-  if (obj.format !== "labler-export") throw new Error("not a labler export file");
+  if (obj.format !== "labeler-export") throw new Error("not a labeler export file");
   const designs = Array.isArray(obj.designs) ? obj.designs : [];
   const history = Array.isArray(obj.history) ? obj.history : [];
   return { designs, history };
@@ -206,10 +206,10 @@ async function importAll(obj) {
 
 // ---- one-time migration from the pre-0.8.3 server --------------------------
 // Older versions kept designs and history server-side. Those endpoints are gone,
-// but an existing ~/.labler/ may still hold them, so the server exposes them once
+// but an existing ~/.labeler/ may still hold them, so the server exposes them once
 // via /api/migrate/export. Without this, upgrading silently loses saved designs.
 
-const MIGRATION_FLAG = "labler_migrated_v083";
+const MIGRATION_FLAG = "labeler_migrated_v083";
 
 function migrationDone() {
   return localStorage.getItem(MIGRATION_FLAG) === "1";
@@ -231,7 +231,7 @@ async function runMigration(fetchFn) {
   const designs = payload.designs || [];
   const history = payload.history || [];
   if (!designs.length && !history.length) { markMigrationDone(); return null; }
-  const counts = await importAll({ format: "labler-export", version: 1, designs, history });
+  const counts = await importAll({ format: "labeler-export", version: 1, designs, history });
   markMigrationDone();
   return counts;
 }

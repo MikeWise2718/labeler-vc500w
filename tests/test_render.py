@@ -5,8 +5,8 @@ import io
 import pytest
 from PIL import Image
 
-from labler import render
-from labler.config import media_for
+from labeler import render
+from labeler.config import media_for
 
 
 def _size(jpeg: bytes):

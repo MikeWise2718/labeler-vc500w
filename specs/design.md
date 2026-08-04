@@ -1,4 +1,4 @@
-# Labler-VC500W — Design Spec
+# Labeler-VC500W — Design Spec
 
 Design for a from-scratch tool to print labels directly to a Brother **VC-500W** ZINK full-color
 printer over the LAN. Shared core library with two front-ends: a **CLI** (built first) and a **Flask
@@ -36,7 +36,7 @@ functions — the Flask app does **not** shell out to the CLI (we'd lose return 
 the print-progress poll loop).
 
 ```
-src/labler/
+src/labeler/
   __init__.py        # __version__ (single source of truth, rendered in Flask header)
   config.py          # host/IP, media table, defaults; load/save settings
   protocol.py        # TCP :9100 transport — lock -> token -> print -> poll -> release
@@ -50,7 +50,7 @@ src/labler/
     static/
 ```
 
-Packaging: **`uv`** project, `pyproject.toml`. Console entry point `labler = "labler.cli:main"`.
+Packaging: **`uv`** project, `pyproject.toml`. Console entry point `labeler = "labeler.cli:main"`.
 Deps: `pillow` (render), `qrcode` (QR), `rich` + `rich-argparse` (CLI). Flask phase adds `flask`.
 
 ### Core API (the contract both front-ends use)
@@ -153,10 +153,10 @@ Parse from `status.xml`: `print_state`, `print_job_stage`, `print_job_error`, `r
 `rich` output, `rich-argparse` help, short forms for every flag.
 
 ```
-labler status                       # query printer; pretty-print Status
-labler print-image FILE             # render image -> print
-labler print-text "TEXT"            # render text   -> print
-labler print-qr "DATA"              # render QR     -> print
+labeler status                       # query printer; pretty-print Status
+labeler print-image FILE             # render image -> print
+labeler print-text "TEXT"            # render text   -> print
+labeler print-qr "DATA"              # render QR     -> print
 ```
 
 Common flags (one-letter for common, two-letter for project-specific):
@@ -173,7 +173,7 @@ Common flags (one-letter for common, two-letter for project-specific):
 | `--dry-run` | `-n` | render, don't print | off |
 | `--verbose` | `-v` | show protocol/progress detail | off |
 
-Config file (`~/.config/labler/config.json` or via `config.py`): default host, media width, font.
+Config file (`~/.config/labeler/config.json` or via `config.py`): default host, media width, font.
 
 ---
 
@@ -182,15 +182,15 @@ Config file (`~/.config/labler/config.json` or via `config.py`): default host, m
 Drag-drop image → live rotate/crop → pick 25/50 mm → preview (the render JPEG) → print. Calls the
 **same core**. Must follow the workspace Flask conventions:
 
-- **Version in header** (top-left, from `labler.__version__`); bump version on every code change.
+- **Version in header** (top-left, from `labeler.__version__`); bump version on every code change.
 - **`GET /api/ping`** → `{hostname, status, timestamp, version}`, no auth.
 - **REST/JSON for every UI action** — no server-rendered form POSTs:
   - `POST /api/print` (multipart image + params) → JSON result/status
   - `GET  /api/status` → Status JSON
   - `POST /api/render` → returns preview JPEG (dry-run)
   - `GET/POST /api/settings` → persisted server-side
-- **Runtime data split**: code in repo; runtime data (settings, uploads, logs) under `~/labler/`.
-- **Structured JSONL logging** to `~/labler/logs/events.jsonl` (start/print/error/etc.).
+- **Runtime data split**: code in repo; runtime data (settings, uploads, logs) under `~/labeler/`.
+- **Structured JSONL logging** to `~/labeler/logs/events.jsonl` (start/print/error/etc.).
 - **Settings persisted server-side** (default host, media, mode, cut).
 - Mobile-responsive (`@media max-width:480px`). No build step — Jinja + vanilla JS.
 - (Auth only if exposed beyond the trusted LAN — default is LAN-only; **never** expose :9100.)
@@ -211,7 +211,7 @@ Device runs outdated embedded Linux/CUPS, zero transport encryption. **LAN-only*
 | 0 | Confirm printer on LAN; verify protocol read+write | ✅ done (2026-06-14) |
 | 1 | Decide fork-vs-fresh + license | ✅ done — fresh, MIT |
 | 2 | Write this spec | ✅ done |
-| 3 | `uv` scaffold: `pyproject.toml`, `src/labler/`, `__version__`, `.gitignore` | ☐ |
+| 3 | `uv` scaffold: `pyproject.toml`, `src/labeler/`, `__version__`, `.gitignore` | ☐ |
 | 4 | Core: `config.py` (media table, host) + `errors.py` | ☐ |
 | 5 | Core: `protocol.py` + `status.py` (port the verified sequence; tests with a fake socket) | ☐ |
 | 6 | Core: `render.py` (image/text/QR, rotate/crop/fit, JPEG) | ☐ |

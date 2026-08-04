@@ -15,8 +15,8 @@ if [ ! -d node_modules ]; then
 fi
 
 echo "== syntax =="
-node --check src/labler/web/static/app.js
-node --check src/labler/web/static/store.js
+node --check src/labeler/web/static/app.js
+node --check src/labeler/web/static/store.js
 echo "  ok"
 
 echo "== store.js (IndexedDB) =="

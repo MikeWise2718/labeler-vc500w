@@ -5,7 +5,7 @@ Sized for 25 mm continuous tape (CZ-1004) at 313 DPI (~12.48 px/mm) => ~312 px
 across the tape. Exercises the full color gamut (RGB/CMY/K/W), gradient ramps,
 a 1px-line resolution test, and corner/border markers to reveal edge clipping.
 
-This is a throwaway diagnostic, intentionally standalone (no `labler` package
+This is a throwaway diagnostic, intentionally standalone (no `labeler` package
 dependency yet). Output is git-ignored; regenerate with: python tools/make_colortest.py
 """
 from PIL import Image, ImageDraw, ImageFont

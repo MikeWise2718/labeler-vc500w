@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy labler-web to munchlax (the shared printer server).
+# Deploy labeler-web to munchlax (the shared printer server).
 #
 # WHY MUNCHLAX: the VC-500W accepts ONE :9100 connection at a time, so exactly one
 # process may own the printer. That process lives on munchlax, which sits next to
@@ -9,14 +9,14 @@
 #   tools/deploy.sh              # rsync + sync deps + restart
 #   tools/deploy.sh --no-restart # push code only
 #
-# Runtime data (~/.labler/) is NEVER touched — settings, stats and the event log
+# Runtime data (~/.labeler/) is NEVER touched — settings, stats and the event log
 # survive every deploy. Designs and history live in each person's browser and are
 # not on the server at all (specs/central-deployment.md).
 set -euo pipefail
 
-HOST="${LABLER_HOST:-munchlax}"
-REMOTE_DIR="${LABLER_REMOTE_DIR:-~/projects/labler-vc5002}"
-SERVICE="com.labler.web"
+HOST="${LABELER_HOST:-munchlax}"
+REMOTE_DIR="${LABELER_REMOTE_DIR:-~/projects/labeler-vc5002}"
+SERVICE="com.labeler.web"
 RESTART=1
 
 for arg in "$@"; do
@@ -52,14 +52,14 @@ if [ "$RESTART" -eq 1 ]; then
   echo "== waiting for the app to come up =="
   sleep 3
   # Verify against the version we just shipped, not just 'something answered'.
-  LOCAL_VER="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' src/labler/__init__.py | head -1)"
+  LOCAL_VER="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' src/labeler/__init__.py | head -1)"
   REMOTE_VER="$(ssh "$HOST" "curl -sf --max-time 5 http://localhost:5000/api/ping" \
                 | sed -n 's/.*\"version\":\"\([^\"]*\)\".*/\1/p')"
   if [ "$LOCAL_VER" = "$REMOTE_VER" ]; then
     echo "OK — ${HOST} is serving v${REMOTE_VER}"
   else
     echo "MISMATCH — shipped v${LOCAL_VER}, server reports '${REMOTE_VER:-no answer}'" >&2
-    echo "  check: ssh ${HOST} 'tail ~/.labler/logs/stderr.log'" >&2
+    echo "  check: ssh ${HOST} 'tail ~/.labeler/logs/stderr.log'" >&2
     exit 1
   fi
 fi

@@ -1,10 +1,10 @@
 """Flask app factory + routes for the VC-500W label designer.
 
 Thin HTTP layer over the verified core. Conventions (workspace Flask rules):
-  - version in header from labler.__version__
+  - version in header from labeler.__version__
   - GET /api/ping with {hostname, status, timestamp, version}
   - every UI action hits /api/... returning JSON (preview/asset endpoints return bytes)
-  - runtime data under ~/.labler/ (see runtime.py), structured JSONL event log
+  - runtime data under ~/.labeler/ (see runtime.py), structured JSONL event log
   - settings persisted server-side
 
 Printer access is SERIALIZED with a module-level lock: the VC-500W accepts only one
@@ -27,7 +27,7 @@ from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
 from .. import __version__, compose, power, protocol
 from ..config import MEDIA, SUPPORTED_WIDTHS, media_for
-from ..errors import LablerError
+from ..errors import LabelerError
 from ..render import _load_font  # for font availability probing
 from . import runtime
 from .runtime import WebSettings, log_event
@@ -141,7 +141,7 @@ def create_app() -> Flask:
         try:
             with _print_queue.hold(_print_queue.take_ticket()):
                 st = protocol.get_status(host)
-        except LablerError as e:
+        except LabelerError as e:
             return jsonify(ok=False, error=str(e), host=host), 502
         return jsonify(ok=True, host=host, **_status_dict(st))
 
@@ -152,7 +152,7 @@ def create_app() -> Flask:
         try:
             with _print_queue.hold(_print_queue.take_ticket()):
                 st = protocol.get_status(host)
-        except LablerError as e:
+        except LabelerError as e:
             return jsonify(ok=False, error=str(e), host=host,
                            total_prints=n_prints, last_printed=last), 502
         cas = st.cassette_type
@@ -170,7 +170,7 @@ def create_app() -> Flask:
         try:
             with _print_queue.hold(_print_queue.take_ticket()):
                 st = protocol.get_status(host)
-        except LablerError as e:
+        except LabelerError as e:
             log_event("device.reset_failed", str(e), host=host)
             return jsonify(ok=False, error=str(e),
                            hint="If status keeps failing, power-cycle the printer."), 502
@@ -244,10 +244,10 @@ def create_app() -> Flask:
                 # autofit can scale unpredictably for landscape images.
                 try:
                     remain_before = protocol.get_status(s.host).remain
-                except LablerError:
+                except LabelerError:
                     remain_before = None
                 st = protocol.print_jpeg(s.host, jpeg, mode=mode, cut=cut)
-        except LablerError as e:
+        except LabelerError as e:
             log_event("print.failed", str(e), host=s.host, kind=type(e).__name__)
             # A failed attempt still belongs in the shared tape record — a jam that
             # ate tape is exactly what someone reading the roll burn-down needs.
@@ -276,7 +276,7 @@ def create_app() -> Flask:
 
     # ---- assets --------------------------------------------------------------
     # REMOVED in v0.8.1. Bitmaps used to be POSTed here and stored under
-    # ~/.labler/assets/, but an uploaded bitmap IS label content and the printer is
+    # ~/.labeler/assets/, but an uploaded bitmap IS label content and the printer is
     # now shared. Images are inlined into the display list as data URIs instead and
     # never touch the server's disk. See specs/central-deployment.md.
 
@@ -284,10 +284,10 @@ def create_app() -> Flask:
     # ---- designs & history: REMOVED in v0.8.3 -----------------------------------
     # Designs and print history are label CONTENT and the printer is now shared, so
     # they live in the client's browser (static/store.js, IndexedDB) instead of in
-    # ~/.labler/. The old endpoints (/api/designs*, /api/history*) are gone.
+    # ~/.labeler/. The old endpoints (/api/designs*, /api/history*) are gone.
     #
     # The one exception below is a READ-ONLY, one-shot export so an existing
-    # ~/.labler/ can be pulled into the browser on first load — without it, upgrading
+    # ~/.labeler/ can be pulled into the browser on first load — without it, upgrading
     # silently loses every saved design. It writes nothing and is safe to call twice.
 
     @app.get("/api/migrate/export")
@@ -394,7 +394,7 @@ def create_app() -> Flask:
             # Hold the printer lock so nobody starts a print into a dying printer.
             with _print_queue.hold(_print_queue.take_ticket()):
                 result = power.power_cycle(s.shelly_host, s.shelly_outlet)
-        except LablerError as e:
+        except LabelerError as e:
             log_event("device.powercycle_failed", str(e),
                       host=s.shelly_host, kind=type(e).__name__)
             return jsonify(ok=False, error=str(e)), 502
@@ -509,7 +509,7 @@ def _free_memory() -> str:
 # ---- legacy history file (JSONL) ---------------------------------------------
 # READ-ONLY as of v0.8.3. Nothing appends here any more — print history lives in
 # the client's IndexedDB (static/store.js). This reader exists solely so
-# /api/migrate/export can hand a pre-0.8.3 ~/.labler/history.jsonl to the browser
+# /api/migrate/export can hand a pre-0.8.3 ~/.labeler/history.jsonl to the browser
 # once. _write_history() and _orientation() were removed with the write path.
 def _read_history() -> list[dict]:
     if not runtime.HISTORY_FILE.exists():
@@ -547,11 +547,11 @@ def _history_summary() -> tuple[int, str | None]:
     return len(recs), (recs[-1].get("timestamp") if recs else None)
 
 
-class _LablerRequestHandler:
-    """Mixin for werkzeug's WSGIRequestHandler: colorized, labler-tagged access log.
+class _LabelerRequestHandler:
+    """Mixin for werkzeug's WSGIRequestHandler: colorized, labeler-tagged access log.
 
     Replaces the plain ``192.168.25.5 - - [..] "GET /api/status" 200 -`` lines with a
-    colored line prefixed by ``labler`` so it's obvious which app is talking. Status
+    colored line prefixed by ``labeler`` so it's obvious which app is talking. Status
     code is colored by class (2xx green, 3xx cyan, 4xx yellow, 5xx red); method and
     path are dimmed for the noisy polling routes (/api/status, /api/ping).
     """
@@ -587,7 +587,7 @@ class _LablerRequestHandler:
         client = self.address_string()
 
         console.print(
-            f"[bold magenta]labler[/] "
+            f"[bold magenta]labeler[/] "
             f"[dim]{client}[/] "
             f"[{req_style}]{line}[/] "
             f"[{code_color}]{code}[/]"
@@ -602,26 +602,26 @@ class _LablerRequestHandler:
             console = Console(stderr=True)
             self.__class__._console = console
         color = "red" if type == "error" else "yellow" if type == "warning" else "dim"
-        console.print(f"[bold magenta]labler[/] [{color}]{message % args}[/]")
+        console.print(f"[bold magenta]labeler[/] [{color}]{message % args}[/]")
 
 
 def _make_request_handler():
     """Build a WSGIRequestHandler subclass with our colorized logging mixed in."""
     from werkzeug.serving import WSGIRequestHandler
 
-    class LablerWSGIRequestHandler(_LablerRequestHandler, WSGIRequestHandler):
+    class LabelerWSGIRequestHandler(_LabelerRequestHandler, WSGIRequestHandler):
         pass
 
-    return LablerWSGIRequestHandler
+    return LabelerWSGIRequestHandler
 
 
 def main() -> None:
-    """Entry point: `labler-web`. Runs the dev server on 0.0.0.0:5001 (see -p)."""
+    """Entry point: `labeler-web`. Runs the dev server on 0.0.0.0:5001 (see -p)."""
     import argparse
 
     from rich.console import Console
 
-    ap = argparse.ArgumentParser(prog="labler-web", description="VC-500W label designer web app")
+    ap = argparse.ArgumentParser(prog="labeler-web", description="VC-500W label designer web app")
     # Default 5001, not Flask's usual 5000: chgeo and other local Flask apps grab
     # 5000, and a silent bind failure / opening the wrong app there wasted a session
     # (CLAUDE.md lesson #12). Override with -p for a one-off.
@@ -632,7 +632,7 @@ def main() -> None:
 
     console = Console(stderr=True)
     console.print(
-        f"[bold magenta]labler[/] [green]VC-500W label designer[/] "
+        f"[bold magenta]labeler[/] [green]VC-500W label designer[/] "
         f"[dim]v{__version__}[/] → [cyan]http://{args.bind}:{args.port}[/]"
     )
     create_app().run(

@@ -1,4 +1,4 @@
-# Labler-VC500W — Flask Label Designer App
+# Labeler-VC500W — Flask Label Designer App
 
 **Status:** in progress · **Owner:** Mike · **Started:** 2026-06-16
 **Source requirements:** `flaskreqs.md` (repo root)
@@ -34,7 +34,7 @@ settings).
 browser (tabs + editor overlay)
    |  JSON display-list  (POST /api/render, /api/print, /api/designs/*)
    v
-Flask app  (src/labler/web/app.py)
+Flask app  (src/labeler/web/app.py)
    |  uses
    v
 core:  compose.render_display_list()  -->  JPEG/PNG bytes
@@ -45,7 +45,7 @@ core:  compose.render_display_list()  -->  JPEG/PNG bytes
 ### The new core piece: `compose.py` (display-list compositor)
 
 `render.py` today renders ONE primitive per call. The editor needs to stack N
-elements onto one label canvas. New module `src/labler/compose.py`:
+elements onto one label canvas. New module `src/labeler/compose.py`:
 
 - **Display-list = JSON**: a label is `{media_mm, length_px|auto, background, elements: [...]}`.
 - Each **element** is a dict with `type` and a common box `{x, y, w, h, rotate, z}`
@@ -63,11 +63,11 @@ elements onto one label canvas. New module `src/labler/compose.py`:
 
 ### Runtime data layout (code/runtime split — workspace rule)
 
-Code in repo (`D:\hw\labler-vc5002`). Runtime data under `~/.labler/` (Windows:
-`%USERPROFILE%\.labler\`), created on first run:
+Code in repo (`D:\hw\labeler-vc5002`). Runtime data under `~/.labeler/` (Windows:
+`%USERPROFILE%\.labeler\`), created on first run:
 
 ```
-~/.labler/
+~/.labeler/
   settings.json          # server-side settings (GET/POST /api/settings)
   logs/events.jsonl      # structured event log
   assets/                # uploaded source bitmaps, content-addressed (sha1.ext)
@@ -77,8 +77,8 @@ Code in repo (`D:\hw\labler-vc5002`). Runtime data under `~/.labler/` (Windows:
   history.jsonl          # append-only print log (loadable + deletable entries)
 ```
 
-(Note: `config.py` currently uses `~/.config/labler/config.json` for CLI Settings.
-The web app's settings live in `~/.labler/settings.json` and are a superset. We
+(Note: `config.py` currently uses `~/.config/labeler/config.json` for CLI Settings.
+The web app's settings live in `~/.labeler/settings.json` and are a superset. We
 keep CLI config separate to avoid breaking the CLI; the web Settings tab is the
 authority for the app. Revisit unifying later.)
 
@@ -121,7 +121,7 @@ Tab order (left→right): **Edit / Print / Device / History / Settings / About**
   a cm ruler + tape-used readout. Right: properties of the selected element — image: replace / fit;
   text: **multiline** content (textarea) / font family / **Bold·Italic** toggles / size / color
   (with preset swatches) / align; border: color / thickness. "Add image / Add text / Add border";
-  **Ctrl+V pastes a bitmap** straight onto the label (saved to `~/.labler/assets/`).
+  **Ctrl+V pastes a bitmap** straight onto the label (saved to `~/.labeler/assets/`).
 - **Print** — current design preview (== print) + orientation badge + tape-used; tape-width selector
   (25/50 mm), mode, cut; **Print** and **Reset device** buttons. Confirms tape length before printing.
 - **Device** — per-device detail card: status, firmware version, tape left (in/cm),
@@ -132,7 +132,7 @@ Tab order (left→right): **Edit / Print / Device / History / Settings / About**
   the entry + its thumbnail.
 - **Settings** — collapsible sections: Printer (host, default media, mode, cut),
   Editor defaults (default font, background, **custom color presets**), Display (units in/cm).
-  Persists to `~/.labler/settings.json`.
+  Persists to `~/.labeler/settings.json`.
 - **About** — app version, Python version, free memory, runtime dir path, links to
   docs, printer model/protocol one-liner.
 
@@ -148,13 +148,13 @@ Tab order (left→right): **Edit / Print / Device / History / Settings / About**
 | 6 | Settings tab + About tab + mobile CSS pass | ✅ 2026-06-16 |
 | 7 | (Deferred) shapes/lines/polygons, z-order UI, CJK fonts | ☐ |
 
-**v0.2.0 shipped** the full vertical slice: run with `uv run labler-web` → http://localhost:5000.
+**v0.2.0 shipped** the full vertical slice: run with `uv run labeler-web` → http://localhost:5000.
 41 tests pass (`uv run pytest`). The print path is the verified `protocol.print_jpeg`;
 the web layer serializes printer access with a module-level lock.
 
 **v0.7.5 — Open on Edit + paste bitmaps.** The default tab is now **Edit** (leftmost/active) — you
 land to design, not to print. **Ctrl+V on the Edit tab** pastes a clipboard bitmap straight onto the
-label: the blob is uploaded via `/api/assets` (content-addressed, saved under `~/.labler/assets/`)
+label: the blob is uploaded via `/api/assets` (content-addressed, saved under `~/.labeler/assets/`)
 and added as an image element sized to the tape width. Paste is ignored in text fields (so Ctrl+V
 still pastes text) and off the Edit tab. Verified in-browser end-to-end.
 
@@ -193,14 +193,14 @@ property through `toHex()`, and `toHex(56)` threw (`.toLowerCase` on a number), 
 `<autofit>0</autofit>` with the JPEG's real width/height so landscape labels print 1:1 instead of
 blowing up down the tape; tape-used now read from the hardware `remain` before/after delta
 (**confirmed on hardware: 3.4 cm matched a ruler**). v0.5.1 hides the unreliable pixel estimate on
-old history entries. v0.5.2: colorized, `labler`-tagged Werkzeug access log.
+old history entries. v0.5.2: colorized, `labeler`-tagged Werkzeug access log.
 
 **v0.4.0 — History as its own tab, with thumbnails.** Moved Print history out of About
 into a dedicated **History** tab. Each entry now shows: a thumbnail of what printed,
 name, timestamp, an orientation badge (portrait/landscape), the tape width, and the
 print length (cm + inches). Load reopens the design in the editor; delete removes the
 entry and its thumbnail.
-- On print, `_append_history` saves a thumbnail PNG (`~/.labler/history/<id>.png`) and
+- On print, `_append_history` saves a thumbnail PNG (`~/.labeler/history/<id>.png`) and
   records `width_px/length_px/length_cm/length_in/orientation` via `measure_display_list`.
 - `GET /api/history` backfills orientation/length for pre-v0.4 entries from their stored
   `display_list`; `GET /api/history/<id>/thumb.png` serves the saved thumbnail or, for old
@@ -226,8 +226,8 @@ a label will consume and flip it to minimize that:
 - [x] Version in header from `__version__`; bump on every code change
 - [x] `GET /api/ping` with the 4 standard fields
 - [x] Every UI action hits `/api/...` returning JSON (no form POSTs)
-- [x] Runtime data under `~/.labler/`, documented in CLAUDE.md
-- [x] Structured JSONL event log at `~/.labler/logs/events.jsonl`
+- [x] Runtime data under `~/.labeler/`, documented in CLAUDE.md
+- [x] Structured JSONL event log at `~/.labeler/logs/events.jsonl`
 - [x] Settings persisted server-side via `/api/settings`
 - [x] (No login flow planned — LAN-only personal app — so Remember-me N/A)
 - [x] No build step; mobile-responsive from the start

@@ -1,5 +1,5 @@
 "use strict";
-// Labler VC-500W web UI. Server-renders-with-client-overlay editor: the canvas is
+// Labeler VC-500W web UI. Server-renders-with-client-overlay editor: the canvas is
 // the real Pillow PNG from /api/render; element manipulation is an HTML overlay that
 // POSTs the display-list back on every change.
 
@@ -8,9 +8,9 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 // ---- editor debug logging ---------------------------------------------------
 // Compact console trace of element positions through the add/move/save/load
-// lifecycle. Off by default; enable with localStorage.setItem('labler_debug','1').
+// lifecycle. Off by default; enable with localStorage.setItem('labeler_debug','1').
 // Each line shows [x,y w×h "text"] per element so you can see what the design holds.
-const DEBUG = localStorage.getItem("labler_debug") === "1";
+const DEBUG = localStorage.getItem("labeler_debug") === "1";
 function elDigest(els) {
   return (els || []).map(e => e.type === "border"
     ? `border` : `${e.type}[${e.x},${e.y} ${e.w}×${e.h ?? "-"} z${e.z} "${(e.text ?? "").slice(0,8)}"]`
@@ -18,7 +18,7 @@ function elDigest(els) {
 }
 function dlog(tag, ...rest) {
   if (!DEBUG) return;
-  console.log(`%c[labler] ${tag}`, "color:#4f8cff;font-weight:600", ...rest);
+  console.log(`%c[labeler] ${tag}`, "color:#4f8cff;font-weight:600", ...rest);
 }
 const api = {
   async json(url, opts) { const r = await fetch(url, opts); return r.json(); },
@@ -129,7 +129,7 @@ $$(".tab").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.ta
 (async function boot() {
   const ping = await api.json("/api/ping");
   $("#version").textContent = "v" + ping.version;
-  if (DEBUG) console.log("%c[labler] editor debug logging ON — silence with localStorage.removeItem('labler_debug')", "color:#3ecf8e");
+  if (DEBUG) console.log("%c[labeler] editor debug logging ON — silence with localStorage.removeItem('labeler_debug')", "color:#3ecf8e");
   await loadSettings();
   await loadFonts();
   // One-shot: pull any pre-0.8.3 server-side designs/history into this browser.
@@ -920,7 +920,7 @@ $("#btn-export-data").onclick = async () => {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `labler-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `labeler-export-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
     flash("#data-status",

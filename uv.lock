@@ -92,8 +92,8 @@ wheels = [
 ]
 
 [[package]]
-name = "labler-vc500w"
-version = "0.7.5"
+name = "labeler-vc500w"
+version = "0.9.7"
 source = { editable = "." }
 dependencies = [
     { name = "pillow" },

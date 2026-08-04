@@ -59,13 +59,13 @@ def media_for(width_mm: int) -> Media:
         raise ValueError(f"unknown media width {width_mm} mm (known: {widths})")
 
 
-CONFIG_DIR = Path.home() / ".config" / "labler"
+CONFIG_DIR = Path.home() / ".config" / "labeler"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
 @dataclass
 class Settings:
-    """User-overridable defaults, persisted to ~/.config/labler/config.json."""
+    """User-overridable defaults, persisted to ~/.config/labeler/config.json."""
 
     host: str = DEFAULT_HOST
     media_width: int = 25
