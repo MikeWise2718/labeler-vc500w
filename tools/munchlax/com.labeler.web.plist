@@ -28,12 +28,14 @@
              whole point of the central deployment. -->
         <string>--bind</string>
         <string>0.0.0.0</string>
+        <!-- 5001, NOT 5000: macOS AirPlay Receiver (ControlCenter) owns 5000 and
+             7000 on munchlax. See D:\hw\docs\munchlax-ports.md for the registry. -->
         <string>--port</string>
-        <string>5000</string>
+        <string>5001</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>__HOME__/projects/labeler-vc5002</string>
+    <string>__HOME__/projects/labeler-vc500w</string>
 
     <key>RunAtLoad</key>
     <true/>

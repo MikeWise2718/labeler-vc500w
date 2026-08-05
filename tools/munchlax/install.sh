@@ -31,12 +31,12 @@ launchctl bootstrap "gui/$(id -u)" "$DEST"
 echo "bootstrapped ${LABEL}"
 
 sleep 3
-if curl -sf --max-time 5 http://localhost:5000/api/ping >/dev/null; then
-  echo "OK — $(curl -s http://localhost:5000/api/ping)"
+if curl -sf --max-time 5 http://localhost:5001/api/ping >/dev/null; then
+  echo "OK — $(curl -s http://localhost:5001/api/ping)"
   echo
-  echo "Reachable from other machines at: http://$(hostname -s):5000"
+  echo "Reachable from other machines at: http://$(hostname -s):5001"
 else
-  echo "service did not answer on :5000 — check the log:" >&2
+  echo "service did not answer on :5001 — check the log:" >&2
   echo "  tail -30 ~/.labeler/logs/stderr.log" >&2
   exit 1
 fi

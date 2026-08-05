@@ -15,7 +15,7 @@
 set -euo pipefail
 
 HOST="${LABELER_HOST:-munchlax}"
-REMOTE_DIR="${LABELER_REMOTE_DIR:-~/projects/labeler-vc5002}"
+REMOTE_DIR="${LABELER_REMOTE_DIR:-~/projects/labeler-vc500w}"
 SERVICE="com.labeler.web"
 RESTART=1
 
@@ -53,7 +53,7 @@ if [ "$RESTART" -eq 1 ]; then
   sleep 3
   # Verify against the version we just shipped, not just 'something answered'.
   LOCAL_VER="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' src/labeler/__init__.py | head -1)"
-  REMOTE_VER="$(ssh "$HOST" "curl -sf --max-time 5 http://localhost:5000/api/ping" \
+  REMOTE_VER="$(ssh "$HOST" "curl -sf --max-time 5 http://localhost:5001/api/ping" \
                 | sed -n 's/.*\"version\":\"\([^\"]*\)\".*/\1/p')"
   if [ "$LOCAL_VER" = "$REMOTE_VER" ]; then
     echo "OK — ${HOST} is serving v${REMOTE_VER}"
@@ -64,4 +64,4 @@ if [ "$RESTART" -eq 1 ]; then
   fi
 fi
 
-echo "done. http://${HOST}:5000"
+echo "done. http://${HOST}:5001"
