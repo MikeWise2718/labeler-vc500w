@@ -200,9 +200,35 @@ MIT.
 - Add a top-level `LICENSE` (MIT) when code lands.
 
 ## Git
+- ⚠️ **THIS REPO IS PUBLIC.** It is the only public repo in the `D:\hw` family — every other
+  subproject (`hw`, `wifi`, `jolteon`, `grub`, `mikrotik-crs`, `shelly`, `house-cooling`, …)
+  is private. Anything committed here is world-readable the moment it is pushed, and
+  `git push` here is the standing default (see below), so there is no review step to catch
+  a mistake.
+
+  **Before every push, check the diff for:** credentials of any kind (passwords, PSKs, API
+  keys, tokens), personal data belonging to anyone, images with EXIF GPS (phone photos carry
+  your home coordinates), and anything about the house or network beyond what this tool
+  needs. When in doubt, leave it out — it is far cheaper than a force-push and a credential
+  rotation.
+
+  **Already public, accepted deliberately:** the LAN subnet and a handful of IPs
+  (`192.168.25.x` — spearow, the Shelly strip, the printer) and the printer's MAC. These are
+  RFC1918 addresses nobody outside the LAN can route to, and the MAC is low value on its own.
+  They stay because the protocol notes are the point of the project. **This is not licence to
+  add more** — the bar for new house/network detail is "does the tool need it?", and the
+  answer is usually no, since anyone using this substitutes their own addresses.
+
+  Sibling repos are private and hold real secrets (Fritzbox logins, WiFi PSKs) and personal
+  data. **Never copy content from a private sibling into this repo** without reading it in
+  full first. In August 2026 a directory was split into a new repo without that check and
+  carried five months of plaintext Fritzbox passwords with it; the repo had to be deleted and
+  rebuilt. That one was private — here the same mistake is public and permanent.
+
 - **This subproject has its OWN dedicated remote**, separate from the parent `D:\hw` repo:
   `origin → https://github.com/MikeWise2718/labeler-vc500w.git` (branch `main`).
-- **Push by default after every commit** unless told otherwise (standing user preference).
+- **Push by default after every commit** unless told otherwise (standing user preference) —
+  which is exactly why the pre-push check above matters.
 - Bump `__version__` (in `src/labeler/__init__.py` AND `pyproject.toml`) on every code change — the
   web header shows the live build, which makes "is my browser seeing the new code?" answerable in two
   seconds. (See the stale-JS lesson below — the header version comes from `/api/ping`, NOT from the
@@ -210,6 +236,36 @@ MIT.
 - Tracked: `CLAUDE.md`, `README.md`, `specs/`, `docs/`, `tests/`, `tools/`, `run.bat`,
   `package.json` (JS test harness). `.gitignore` excludes `.venv/`, `__pycache__/`,
   `node_modules/`, `misc/` (scratch test images — see lesson below).
+
+### This directory has been renamed twice — old names in history are THIS project
+The current path is `D:\hw\labeler-vc500w`. It was previously:
+
+| Path | Period | Why it changed |
+|---|---|---|
+| `D:\hw\Labler-VC500W` | → 2026-06-14 | original name, with the `Labler` typo |
+| `D:\hw\labler-vc5002` | 2026-06-14 → 2026-08-05 | lowercased; `VC500W` mangled to `vc5002` |
+| `D:\hw\labeler-vc500w` | 2026-08-05 → | typo fixed (`labler` → `labeler`), suffix corrected |
+
+Consequences worth knowing before you go hunting:
+
+- **Old paths in commit messages, specs, logs and session transcripts are not a different
+  project** and not a mistake — don't "fix" a historical reference or go looking for a
+  sibling directory that no longer exists.
+- **Claude Code stores session history per working-directory path**, so each rename orphaned
+  the previous history into its own munged dir under
+  `C:\Users\mike\.claude\projects\`. The dirs `D--hw-Labler-VC500W` and
+  `D--hw-labler-vc5002` were merged by hand into `D--hw-labeler-vc500w` on 2026-08-05, so
+  all four sessions plus `memory/` resume normally. If history ever looks missing again
+  after a rename, that merge is the fix — the transcripts are not lost, just under the old
+  munged name.
+- The **`project-tracker` app keys projects by path** and was left pointing at
+  `D:\hw\labler-vc5002`; the rename handling and remediation steps are written up in
+  `D:\python\project-tracker\specs\project-rename-handling.md`.
+- The **parent `D:\hw` repo gitignores this directory by name** (it's a nested repo with its
+  own remote). Any future rename must update `D:\hw\.gitignore` and the nested-repo list in
+  `D:\hw\CLAUDE.md` in the same change, or this project gets double-tracked.
+- The **git remote name was never renamed** and remains `labeler-vc500w` — it spells
+  `labeler` correctly and matches the current directory, so leave it alone.
 
 ## Testing
 Two suites — **run both**; the Python one never touches browser JS (lesson #6):
