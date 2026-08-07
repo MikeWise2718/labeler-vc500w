@@ -162,17 +162,34 @@ def _load_font(
         return f
 
     # Last-ditch generic fallbacks, honoring style where the file names are known.
+    # Includes macOS names (capitalized Arial.ttf, Helvetica) because PIL's bare-name
+    # lookup is case-sensitive: Windows/Linux ship "arial.ttf"/"DejaVuSans.ttf", but
+    # macOS has "Arial.ttf"/"Helvetica.ttc". Missing the macOS spelling was silently
+    # dropping every default-font label to load_default()'s ~10px BITMAP font, which
+    # ignores `size` — so 56pt text rendered ~8px tall on munchlax (macOS) while it
+    # was fine on the Windows dev box. Confirmed + fixed 2026-08-07.
     generic = {
-        "bi": ["arialbi.ttf", "DejaVuSans-BoldOblique.ttf"],
-        "b": ["arialbd.ttf", "DejaVuSans-Bold.ttf"],
-        "i": ["ariali.ttf", "DejaVuSans-Oblique.ttf"],
+        "bi": ["arialbi.ttf", "Arial Bold Italic.ttf", "DejaVuSans-BoldOblique.ttf"],
+        "b": ["arialbd.ttf", "Arial Bold.ttf", "DejaVuSans-Bold.ttf"],
+        "i": ["ariali.ttf", "Arial Italic.ttf", "DejaVuSans-Oblique.ttf"],
         "r": [],
     }[style]
-    for name in generic + ["arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"]:
+    fallbacks = generic + [
+        "arial.ttf", "Arial.ttf",              # Windows / macOS
+        "Helvetica.ttc", "Verdana.ttf",        # macOS
+        "DejaVuSans.ttf", "LiberationSans-Regular.ttf",  # Linux
+    ]
+    for name in fallbacks:
         f = _try_truetype(name, size)
         if f:
             return f
-    return ImageFont.load_default()
+    # Final guard: load_default(size) returns a SCALABLE font that honors `size`
+    # (Pillow >= 10.1); the bare load_default() is a fixed ~10px bitmap that ignores
+    # it. Passing size means even a fontless host renders at the requested size.
+    try:
+        return ImageFont.load_default(size)
+    except TypeError:  # ancient Pillow without the size arg
+        return ImageFont.load_default()
 
 
 def render_text(

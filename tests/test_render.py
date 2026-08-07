@@ -84,6 +84,27 @@ def test_load_font_never_crashes_on_non_string():
     assert render._load_font("does-not-exist.ttf", 16) is not None
 
 
+def test_default_font_honors_size():
+    # Regression: on macOS (munchlax) the generic fallback list only had the
+    # lowercase Windows/Linux names, so a null ("(default)") font fell through to
+    # ImageFont.load_default() — a fixed ~10px BITMAP font that ignores `size`.
+    # Result: 56pt text rendered ~8px tall on munchlax while fine on the Windows
+    # dev box. The fix adds macOS names AND uses load_default(size). Assert a large
+    # size renders markedly taller than a small one, whatever fonts the host has.
+    from PIL import Image, ImageDraw
+
+    def text_height(size):
+        f = render._load_font(None, size)
+        d = ImageDraw.Draw(Image.new("RGB", (400, 400)))
+        bb = d.textbbox((0, 0), "Label", font=f)
+        return bb[3] - bb[1]
+
+    small, large = text_height(20), text_height(120)
+    # A size-honoring font makes 120pt several times taller than 20pt. The old
+    # bitmap-fallback bug made both ~8px (ratio ~1), so this ratio check catches it.
+    assert large > small * 2, f"font size not honored: 20pt->{small}px, 120pt->{large}px"
+
+
 def test_font_family_bold_italic_pick_distinct_files():
     # On a box with Arial installed, each style maps to a different file. If Arial
     # isn't present, skip — the resolver still degrades gracefully.
