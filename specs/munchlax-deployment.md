@@ -78,10 +78,12 @@ ever needed).
 | 8 | Retire `tools/munchlax/*` + old `tools/deploy.sh` | Done (git rm'd) |
 | 9 | Update `CLAUDE.md` Deployment section | Done |
 | 10 | Commit + push scaffolding | Done |
-| 11 | On munchlax: clone, env, `uv sync`, smoke-test | **Todo (user runs sudo bits)** |
-| 12 | Install LaunchDaemon; verify `sudo launchctl list` | Todo (user) |
-| 13 | Register with pokeflute; confirm on Services tab | Todo |
-| 14 | Point app host at printer `.190`; end-to-end print via munchlax | Todo |
+| 11 | On munchlax: clone, env, `uv sync`, smoke-test | Done (waitress smoke-test → HTTP 200, bound 0.0.0.0:5001) |
+| 12 | Install LaunchDaemon; verify running | Done (LaunchDaemon in /Library/LaunchDaemons, pid running, probe 200) |
+| 13 | Register with pokeflute; confirm on Services tab | Done (registered_count 7→8, source=registry, Labeler → munchlax:5001) |
+| 14 | Point app host at printer `.190`; end-to-end print via munchlax | **Blocked**: munchlax settings.json host=.190 set + service reaches LAN, but the printer is OFF the network (NewActive=0, unreachable from both spearow AND munchlax; munchlax→.1 fine). Printer's known flaky-Wi-Fi drop, NOT a deploy issue. Do the live print once the printer rejoins `Dungeon` (solid blue LED / power-cycle). |
 
-**Scaffolding (1–10) is complete and committed.** Remaining (11–14) are on-munchlax
-steps that need sudo/SSH — walk through them together next.
+**DEPLOYMENT COMPLETE.** labeler runs as an always-on LaunchDaemon on munchlax:5001,
+survives reboots, and shows on pokeflute's Services tab. The only unfinished item is a
+live print *through* munchlax, blocked solely by the printer being asleep/dropped from
+Wi-Fi at the moment — verify with one print when it's back online.
