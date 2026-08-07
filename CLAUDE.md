@@ -286,21 +286,29 @@ tools/run-js-tests.sh                    # 16 tests + syntax checks
   properly rather than eyeballed. Needs `npm install` once.
 
 ## Deployment (munchlax)
-Runs as an always-on **LaunchDaemon** on munchlax (waitress, port **5001**), registered
-on **pokeflute's Services tab**. Follows the sanctioned munchlax convention — NOT a
-hand-rolled plist. Full plan + task tracker: **`specs/munchlax-deployment.md`**. Template
-was Recall/`cca_quiz`. Scaffolding lives in **`deploy/`**:
+Runs as an always-on **LaunchDaemon** on munchlax (Flask dev server + `--reload`, port
+**5001**), registered on **pokeflute's Services tab**. Full plan + task tracker:
+**`specs/munchlax-deployment.md`**. Scaffolding lives in **`deploy/`**:
+
+**Deploy = `ssh munchlax 'cd ~/projects/labeler-vc500w && git pull --ff-only && uv sync --extra web'`** —
+the `--reload` stat-watcher makes the running process pick up the new code, **no sudo
+restart needed** (this is how ytsum and the other munchlax services deploy). Only a
+*startup-time* change needs `sudo launchctl kickstart -k system/com.labeler.web` (needs a
+TTY → run it yourself). We switched off waitress for exactly this reason — a production
+WSGI server has no reloader, so it needed a sudo restart on every code change.
 
 | File | Purpose |
 |---|---|
-| `run-labeler-web.sh` | launcher: sources `~/.labeler/env`, execs `waitress-serve --call labeler.wsgi:app` on `0.0.0.0:5001` |
+| `run-labeler-web.sh` | launcher: sources `~/.labeler/env`, execs `labeler-web --reload` on `0.0.0.0:5001` (dev server + stat-reload, like ytsum — so `git pull` alone deploys code, no sudo restart) |
 | `labeler.conf` | consumed by pokeflute's `install-launchd-daemon.sh` (LABEL/RUN_SCRIPT/PORT…) |
 | `com.labeler.web.plist` | the LaunchAgent the daemon-installer converts to a system LaunchDaemon |
 | `pokeflute-service.json` | registry entry (`id: labeler`, `url: http://munchlax:5001`) |
 | `register-with-pokeflute.sh` | copies that JSON to `munchlax:~/services-registry/labeler.json` |
 
-`src/labeler/wsgi.py` is the production entry (`labeler.wsgi:app` factory). **Never use the
-Flask dev server (`labeler-web`) on munchlax** — that's local-dev only.
+`src/labeler/wsgi.py` (`labeler.wsgi:app` factory) is kept for the waitress option but is
+NOT used by the current deploy — the launcher runs `labeler-web --reload` instead so code
+changes hot-reload. Concurrency is still safe: `threaded=True` + the `_print_queue` lock
+serialize all printer access regardless of server.
 
 **On-munchlax install** (needs sudo → run the `ssh -t` bits yourself), per the spec:
 clone to `~/projects/labeler-vc500w` → `~/.labeler/env` (chmod 600, `LABELER_PORT=5001`) →

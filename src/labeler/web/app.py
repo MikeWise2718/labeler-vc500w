@@ -628,17 +628,28 @@ def main() -> None:
     ap.add_argument("-p", "--port", type=int, default=5001)
     ap.add_argument("-b", "--bind", default="0.0.0.0")
     ap.add_argument("-d", "--debug", action="store_true")
+    # --reload enables Werkzeug's stat-based reloader WITHOUT full debug (no debugger
+    # PIN, no tracebacks to the browser). This is how the munchlax deploy stays
+    # restart-free: the LaunchDaemon runs `labeler-web --reload`, so a `git pull`
+    # alone makes the running process pick up code changes — matching how the other
+    # munchlax services (e.g. ytsum) deploy. Only a startup-time change needs the
+    # sudo `launchctl kickstart`. The reloader fires on FILE change (deploy time),
+    # never mid-print, so the module-level _print_queue lock is unaffected.
+    ap.add_argument("-r", "--reload", action="store_true",
+                    help="watch source files and reload on change (for the munchlax deploy)")
     args = ap.parse_args()
 
     console = Console(stderr=True)
     console.print(
         f"[bold magenta]labeler[/] [green]VC-500W label designer[/] "
         f"[dim]v{__version__}[/] → [cyan]http://{args.bind}:{args.port}[/]"
+        + (" [yellow](auto-reload)[/]" if args.reload else "")
     )
     create_app().run(
         host=args.bind,
         port=args.port,
         debug=args.debug,
+        use_reloader=args.reload,
         request_handler=_make_request_handler(),
         # threaded=True is REQUIRED for the shared deployment: a print holds the
         # request for 10-20 s, and single-threaded werkzeug would block everyone
