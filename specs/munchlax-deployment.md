@@ -69,16 +69,19 @@ ever needed).
 | # | Task | Status |
 |---|------|--------|
 | 1 | Spec written | Done |
-| 2 | `waitress` dep + `src/labeler/wsgi.py` | Todo |
-| 3 | `deploy/run-labeler-web.sh` (755, waitress, 0.0.0.0:5001) | Todo |
-| 4 | `deploy/labeler.conf` | Todo |
-| 5 | `deploy/com.labeler.web.plist` (LaunchAgent for daemon-installer) | Todo |
-| 6 | `deploy/pokeflute-service.json` | Todo |
-| 7 | `deploy/register-with-pokeflute.sh` | Todo |
-| 8 | Retire `tools/munchlax/*` + old `tools/deploy.sh` | Todo |
-| 9 | Update `CLAUDE.md` Deployment section | Todo |
-| 10 | Commit + push scaffolding | Todo |
-| 11 | On munchlax: clone, env, `uv sync`, smoke-test | Todo (user runs sudo bits) |
+| 2 | `waitress` dep + `src/labeler/wsgi.py` | Done (waitress serves /api/ping locally, verified) |
+| 3 | `deploy/run-labeler-web.sh` (755, waitress, 0.0.0.0:5001) | Done (exec bit set via update-index) |
+| 4 | `deploy/labeler.conf` | Done |
+| 5 | `deploy/com.labeler.web.plist` (LaunchAgent for daemon-installer) | Done |
+| 6 | `deploy/pokeflute-service.json` | Done |
+| 7 | `deploy/register-with-pokeflute.sh` | Done (dry-run validates) |
+| 8 | Retire `tools/munchlax/*` + old `tools/deploy.sh` | Done (git rm'd) |
+| 9 | Update `CLAUDE.md` Deployment section | Done |
+| 10 | Commit + push scaffolding | Done |
+| 11 | On munchlax: clone, env, `uv sync`, smoke-test | **Todo (user runs sudo bits)** |
 | 12 | Install LaunchDaemon; verify `sudo launchctl list` | Todo (user) |
 | 13 | Register with pokeflute; confirm on Services tab | Todo |
 | 14 | Point app host at printer `.190`; end-to-end print via munchlax | Todo |
+
+**Scaffolding (1–10) is complete and committed.** Remaining (11–14) are on-munchlax
+steps that need sudo/SSH — walk through them together next.

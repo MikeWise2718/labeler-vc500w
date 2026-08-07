@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "labeler",
+  "title": "Labeler",
+  "description": "Brother VC-500W label printer — shared",
+  "url": "http://munchlax:5001",
+  "health_url": "http://munchlax:5001/api/ping",
+  "probe_insecure": false,
+  "order": 60
+}

@@ -286,13 +286,31 @@ tools/run-js-tests.sh                    # 16 tests + syntax checks
   properly rather than eyeballed. Needs `npm install` once.
 
 ## Deployment (munchlax)
-```
-tools/deploy.sh                       # rsync + uv sync + launchd restart + version check
-tools/munchlax/install.sh             # run ON munchlax, once, to install the agent
-```
-`deploy.sh` verifies that `/api/ping` reports the version it just shipped — "something
-answered" is not proof the new code is live. Runtime data (`~/.labeler/`) is never touched
-by a deploy.
+Runs as an always-on **LaunchDaemon** on munchlax (waitress, port **5001**), registered
+on **pokeflute's Services tab**. Follows the sanctioned munchlax convention — NOT a
+hand-rolled plist. Full plan + task tracker: **`specs/munchlax-deployment.md`**. Template
+was Recall/`cca_quiz`. Scaffolding lives in **`deploy/`**:
+
+| File | Purpose |
+|---|---|
+| `run-labeler-web.sh` | launcher: sources `~/.labeler/env`, execs `waitress-serve --call labeler.wsgi:app` on `0.0.0.0:5001` |
+| `labeler.conf` | consumed by pokeflute's `install-launchd-daemon.sh` (LABEL/RUN_SCRIPT/PORT…) |
+| `com.labeler.web.plist` | the LaunchAgent the daemon-installer converts to a system LaunchDaemon |
+| `pokeflute-service.json` | registry entry (`id: labeler`, `url: http://munchlax:5001`) |
+| `register-with-pokeflute.sh` | copies that JSON to `munchlax:~/services-registry/labeler.json` |
+
+`src/labeler/wsgi.py` is the production entry (`labeler.wsgi:app` factory). **Never use the
+Flask dev server (`labeler-web`) on munchlax** — that's local-dev only.
+
+**On-munchlax install** (needs sudo → run the `ssh -t` bits yourself), per the spec:
+clone to `~/projects/labeler-vc500w` → `~/.labeler/env` (chmod 600, `LABELER_PORT=5001`) →
+`/opt/homebrew/bin/uv sync --extra web` → push conf + `ssh -t munchlax
+'~/admin/install-launchd-daemon.sh labeler'` → `deploy/register-with-pokeflute.sh`.
+Reference: `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`. Runtime data
+(`~/.labeler/`) is never touched by a deploy.
+
+**Port 5001, not 5000:** macOS AirPlay owns 5000 & 7000 on munchlax — see the port
+registry `D:\hw\docs\munchlax-ports.md` before adding any service.
 
 ## Lessons learned (web app)
 Hard-won, to stop re-paying for them:
