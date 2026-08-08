@@ -396,6 +396,7 @@ function renderProps() {
     h += num("x", "X") + num("y", "Y") + num("w", "Width", 1) + num("rotate", "Rotate");
   } else if (el.type === "image") {
     h += `<button id="prop-pick">Replace image…</button>`;
+    h += `<button id="prop-rmbg" title="Flood-fill the outer background from the corners and make it transparent — so the sprite sits on the label's own background">Remove background</button>`;
     h += `<label>Fit<select data-k="fit"><option ${el.fit==="contain"?"selected":""}>contain</option><option ${el.fit==="stretch"?"selected":""}>stretch</option></select></label>`;
     h += num("x", "X") + num("y", "Y") + num("w", "Width", 1) + num("h", "Height", 1) + num("rotate", "Rotate");
   } else if (el.type === "border") {
@@ -437,8 +438,79 @@ function renderProps() {
     scheduleRender();
   });
   wireSwatches(p, el);
-  if (el.type === "image") $("#prop-pick").onclick = () => pickImageFor(el);
+  if (el.type === "image") {
+    $("#prop-pick").onclick = () => pickImageFor(el);
+    $("#prop-rmbg").onclick = () => removeBackgroundFor(el);
+  }
   if (el.type === "text") fillFontSelect($("#prop-font"), el.font);
+}
+
+// Remove the outer background of an image element: flood-fill inward from the four
+// corners, turning contiguous background-colored pixels transparent, and set the
+// element's src to the new PNG. Done entirely in the browser (canvas pixels) so the
+// image never leaves as anything but its inlined data URI — the privacy model is
+// untouched. Interior light areas (e.g. wing membranes) not connected to an edge
+// are preserved, because the fill only spreads from the borders.
+async function removeBackgroundFor(el) {
+  if (!el.src) { alert("No image to process. Pick an image first."); return; }
+  pushUndo(); endEditSession();
+  flash("#print-status", "removing background…");
+  try {
+    const out = await floodFillTransparent(el.src, 32);   // tolerance ~32/255
+    el.src = out;
+    renderEditor();
+    flash("#print-status", "background removed");
+  } catch (e) {
+    dlog("remove background failed", e);
+    flash("#print-status", "remove background failed: " + (e.message || e));
+  }
+}
+
+// Flood-fill from all four corners, making edge-connected pixels within `tol` of the
+// corner color transparent. Returns a PNG data URI. Pure-ish: takes a src data URI,
+// returns a new one; no DOM side effects beyond an offscreen canvas.
+function floodFillTransparent(srcDataUri, tol) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth, h = img.naturalHeight;
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const id = ctx.getImageData(0, 0, w, h);
+        const d = id.data;
+        const at = (x, y) => (y * w + x) * 4;
+        // Reference color: average the four corners (robust to one noisy corner).
+        const corners = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]];
+        let rr = 0, gg = 0, bb = 0;
+        for (const [x, y] of corners) { const i = at(x, y); rr += d[i]; gg += d[i + 1]; bb += d[i + 2]; }
+        rr /= 4; gg /= 4; bb /= 4;
+        const near = (i) => Math.abs(d[i] - rr) <= tol && Math.abs(d[i + 1] - gg) <= tol && Math.abs(d[i + 2] - bb) <= tol;
+        // Iterative flood fill (stack) from every corner; clear alpha on match.
+        const seen = new Uint8Array(w * h);
+        const stack = [];
+        for (const [x, y] of corners) stack.push(x, y);
+        while (stack.length) {
+          const y = stack.pop(), x = stack.pop();
+          if (x < 0 || y < 0 || x >= w || y >= h) continue;
+          const p = y * w + x;
+          if (seen[p]) continue;
+          seen[p] = 1;
+          const i = p * 4;
+          if (d[i + 3] === 0 || near(i)) {
+            d[i + 3] = 0;                       // make transparent
+            stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+          }
+        }
+        ctx.putImageData(id, 0, 0);
+        resolve(cv.toDataURL("image/png"));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error("could not decode image"));
+    img.src = srcDataUri;
+  });
 }
 
 // Standard palette for the preset swatches. Order roughly mirrors the printer's
