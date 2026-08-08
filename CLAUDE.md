@@ -286,36 +286,51 @@ tools/run-js-tests.sh                    # 16 tests + syntax checks
   properly rather than eyeballed. Needs `npm install` once.
 
 ## Deployment (munchlax)
-Runs as an always-on **LaunchDaemon** on munchlax (Flask dev server + `--reload`, port
+Runs as an always-on **root** system **LaunchDaemon** on munchlax (Flask dev server, port
 **5001**), registered on **pokeflute's Services tab**. Full plan + task tracker:
-**`specs/munchlax-deployment.md`**. Scaffolding lives in **`deploy/`**:
+**`specs/munchlax-deployment.md`**. Scaffolding lives in **`deploy/`**.
 
-**Deploy = `ssh munchlax 'cd ~/projects/labeler-vc500w && git pull --ff-only && uv sync --extra web'`** —
-the `--reload` stat-watcher makes the running process pick up the new code, **no sudo
-restart needed** (this is how ytsum and the other munchlax services deploy). Only a
-*startup-time* change needs `sudo launchctl kickstart -k system/com.labeler.web` (needs a
-TTY → run it yourself). We switched off waitress for exactly this reason — a production
-WSGI server has no reloader, so it needed a sudo restart on every code change.
+### ⚠️ Must run as ROOT — macOS 26 Local Network Privacy (cost a whole session 2026-08-08)
+The daemon **must run as `root`** (`USER_NAME=root` in `labeler.conf`). This is NOT
+cosmetic. macOS 15+/26 **Local Network Privacy** blocks a *user-level* (uid 501 / `mike`)
+launchd process from reaching a LAN host and reports it as **`[Errno 65] No route to host`
+— a mislabeled PERMISSION denial, not a routing/network fault.** Symptoms that wasted a
+session: `/api/status` and print fail with "No route to host" from the service, while
+`ping`, `nc`, and a *fresh shell* `python create_connection` to the SAME `:9100` all
+succeed. Root is EXEMPT from Local Network Privacy; a **shell/SSH** process is exempt too
+(Terminal is the "responsible" app) — which is the trap: every manual test works, only the
+daemon fails. **Do not chase Tailscale, routes, IPv4/source-binding, `--reload`, or process
+age — none of them are it.** `HOME_ENV=/Users/mike` keeps runtime data in mike's home even
+though the process is root (root writes anywhere). Diagnosis command: run a one-shot root
+launchd job that does `socket.create_connection((printer,9100))` — it returns `uid=0: OK`
+while the uid=501 daemon returns Errno 65. Refs: Apple **TN3179** (Understanding Local
+Network Privacy), developer.apple.com/forums/thread/776552 & 778457.
+
+**Deploy = `ssh munchlax 'cd ~/projects/labeler-vc500w && git pull --ff-only && uv sync --extra web'`**
+then restart: **`ssh munchlax 'sudo -n /bin/launchctl kickstart -k system/com.labeler.web'`**
+— this restart is **passwordless** (a `sudoers.d` rule on munchlax permits
+`/bin/launchctl kickstart -k system/com.*.web` with NOPASSWD), so no TTY/`-t` is needed and
+a Claude session can deploy end-to-end without you copy-pasting. (The dev server has no
+reloader, so a code change needs this restart — but it costs nothing now that it's
+passwordless.)
 
 | File | Purpose |
 |---|---|
-| `run-labeler-web.sh` | launcher: sources `~/.labeler/env`, execs `labeler-web --reload` on `0.0.0.0:5001` (dev server + stat-reload, like ytsum — so `git pull` alone deploys code, no sudo restart) |
-| `labeler.conf` | consumed by pokeflute's `install-launchd-daemon.sh` (LABEL/RUN_SCRIPT/PORT…) |
+| `run-labeler-web.sh` | launcher: sources `~/.labeler/env`, execs `labeler-web` on `0.0.0.0:5001`. **No `--reload`** — the Werkzeug reloader's re-exec'd worker inherits a broken network context on this box (was a red herring during the 2026-08-08 debug; the real cause was the root/permission issue above). |
+| `labeler.conf` | pokeflute's `install-launchd-daemon.sh` config. **`USER_NAME=root`, `GROUP_NAME=wheel`, `HOME_ENV=/Users/mike`** (see the root note above). |
 | `com.labeler.web.plist` | the LaunchAgent the daemon-installer converts to a system LaunchDaemon |
 | `pokeflute-service.json` | registry entry (`id: labeler`, `url: http://munchlax:5001`) |
 | `register-with-pokeflute.sh` | copies that JSON to `munchlax:~/services-registry/labeler.json` |
 
 `src/labeler/wsgi.py` (`labeler.wsgi:app` factory) is kept for the waitress option but is
-NOT used by the current deploy — the launcher runs `labeler-web --reload` instead so code
-changes hot-reload. Concurrency is still safe: `threaded=True` + the `_print_queue` lock
-serialize all printer access regardless of server.
+NOT used by the current deploy. Concurrency is safe: `threaded=True` + the `_print_queue`
+lock serialize all printer access.
 
-**On-munchlax install** (needs sudo → run the `ssh -t` bits yourself), per the spec:
+**On-munchlax (re)install** (needs sudo once → `install-launchd-daemon.sh` prompts):
 clone to `~/projects/labeler-vc500w` → `~/.labeler/env` (chmod 600, `LABELER_PORT=5001`) →
-`/opt/homebrew/bin/uv sync --extra web` → push conf + `ssh -t munchlax
-'~/admin/install-launchd-daemon.sh labeler'` → `deploy/register-with-pokeflute.sh`.
-Reference: `D:\hw\pokeflute\docs\deploying-a-new-munchlax-service.md`. Runtime data
-(`~/.labeler/`) is never touched by a deploy.
+`/opt/homebrew/bin/uv sync --extra web` → push `deploy/labeler.conf` to
+`~/admin/services/labeler.conf` → `~/admin/install-launchd-daemon.sh labeler` →
+`deploy/register-with-pokeflute.sh`. Runtime data (`~/.labeler/`) is never touched.
 
 **Port 5001, not 5000:** macOS AirPlay owns 5000 & 7000 on munchlax — see the port
 registry `D:\hw\docs\munchlax-ports.md` before adding any service.

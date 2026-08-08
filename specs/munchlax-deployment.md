@@ -81,9 +81,33 @@ ever needed).
 | 11 | On munchlax: clone, env, `uv sync`, smoke-test | Done (waitress smoke-test → HTTP 200, bound 0.0.0.0:5001) |
 | 12 | Install LaunchDaemon; verify running | Done (LaunchDaemon in /Library/LaunchDaemons, pid running, probe 200) |
 | 13 | Register with pokeflute; confirm on Services tab | Done (registered_count 7→8, source=registry, Labeler → munchlax:5001) |
-| 14 | Point app host at printer `.190`; end-to-end print via munchlax | **Blocked**: munchlax settings.json host=.190 set + service reaches LAN, but the printer is OFF the network (NewActive=0, unreachable from both spearow AND munchlax; munchlax→.1 fine). Printer's known flaky-Wi-Fi drop, NOT a deploy issue. Do the live print once the printer rejoins `Dungeon` (solid blue LED / power-cycle). |
+| 14 | Point app host at printer `.190`; service reaches printer | **Done** — but only after the root fix below. |
+| 15 | **macOS 26 Local Network Privacy: run daemon as ROOT** | **Done (2026-08-08)** — see below |
 
-**DEPLOYMENT COMPLETE.** labeler runs as an always-on LaunchDaemon on munchlax:5001,
-survives reboots, and shows on pokeflute's Services tab. The only unfinished item is a
-live print *through* munchlax, blocked solely by the printer being asleep/dropped from
-Wi-Fi at the moment — verify with one print when it's back online.
+**DEPLOYMENT COMPLETE.** labeler runs as an always-on **root** LaunchDaemon on
+munchlax:5001, reaches the printer, survives reboots, shows on pokeflute's Services tab,
+and restarts passwordless.
+
+## The root-vs-user saga (macOS 26 Local Network Privacy)
+The service was installed and healthy but **every printer call failed `[Errno 65] No route
+to host`** — while `ping`, `nc`, and a fresh-shell `python create_connection` to the same
+`:9100` all succeeded. A long debug ruled out (in order): stale process, connect retries,
+route table, IPv4/source-binding, the Werkzeug `--reload` worker, LaunchDaemon-vs-Agent,
+and Tailscale (tested with it fully down — still failed).
+
+**Root cause:** macOS 15+/26 **Local Network Privacy**. A *user-level* launchd process
+(uid 501 `mike`) is blocked from LAN access and the failure is mis-reported as EHOSTUNREACH
+("No route to host") instead of a permission error. **root is EXEMPT**; a shell/SSH process
+is exempt too (Terminal is "responsible") — which is why every manual test worked and only
+the daemon failed. There is no `tccutil`/Settings way to grant it to a CLI tool.
+
+**Fix (in `deploy/labeler.conf`):** `USER_NAME=root`, `GROUP_NAME=wheel`,
+`HOME_ENV=/Users/mike` (runtime data stays in mike's home; root can write there). Proven:
+a one-shot `uid=0` launchd job returns `OK`; the `uid=501` one returns `Errno 65`. After
+reinstalling as root: `state=IDLE, ok=true`. Refs: Apple TN3179; developer.apple.com
+forums 776552 / 778457. **Never re-debug this — if a munchlax daemon can't reach the LAN
+but shells can, it's Local Network Privacy; run it as root.**
+
+**Passwordless restart:** a munchlax `sudoers.d` rule permits `/bin/launchctl kickstart -k
+system/com.*.web` NOPASSWD, so deploy+restart needs no TTY — a Claude session can do it
+end-to-end.
