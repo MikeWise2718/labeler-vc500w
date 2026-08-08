@@ -75,6 +75,49 @@ def test_connect_timeout_raises_connection_busy(monkeypatch):
         protocol.get_status("printer.local")
 
 
+def test_connect_retries_transient_route_error_then_succeeds(monkeypatch):
+    # Regression: on munchlax (multi-interface host) a long-lived process could get
+    # EHOSTUNREACH ("No route to host") after the printer dropped+rejoined Wi-Fi,
+    # while a fresh connect worked. _connect must RETRY transient routing errors so
+    # the service self-heals instead of needing a restart. Here the first two
+    # attempts raise EHOSTUNREACH, the third succeeds.
+    import errno as _errno
+
+    calls = {"n": 0}
+    real_sock = socket.socket()
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OSError(_errno.EHOSTUNREACH, "No route to host")
+        return real_sock
+
+    monkeypatch.setattr(protocol.socket, "create_connection", flaky)
+    monkeypatch.setattr(protocol.time, "sleep", lambda *_: None)  # no real backoff wait
+    s = protocol._connect("192.168.25.190", timeout=1.0)
+    assert s is real_sock
+    assert calls["n"] == 3          # retried past the two transient failures
+    real_sock.close()
+
+
+def test_connect_gives_up_after_persistent_transient_error(monkeypatch):
+    # If the route never recovers, _connect still surfaces ConnectionBusy (bounded
+    # retries, not an infinite spin).
+    import errno as _errno
+
+    calls = {"n": 0}
+
+    def always_unreachable(*a, **k):
+        calls["n"] += 1
+        raise OSError(_errno.EHOSTUNREACH, "No route to host")
+
+    monkeypatch.setattr(protocol.socket, "create_connection", always_unreachable)
+    monkeypatch.setattr(protocol.time, "sleep", lambda *_: None)
+    with pytest.raises(ConnectionBusy):
+        protocol._connect("192.168.25.190", timeout=1.0)
+    assert calls["n"] == protocol._CONNECT_RETRIES   # bounded, not infinite
+
+
 def test_jpeg_size_parses_real_jpeg():
     # A real JPEG carries its dimensions in the SOF marker; _jpeg_size must read them
     # so the print XML sends the true width/height (autofit=0).

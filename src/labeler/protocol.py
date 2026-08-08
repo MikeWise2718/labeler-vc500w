@@ -19,6 +19,7 @@ the <print> message directly.
 
 from __future__ import annotations
 
+import errno
 import os
 import socket
 import time
@@ -41,19 +42,50 @@ _MODE_PARAMS = {
 }
 
 
+# errno values for transient "the route/host isn't reachable *right now*" failures.
+# On a multi-interface host (munchlax has en0..en7, several bridged/promisc), a
+# long-lived process can hold a STALE per-process route for the printer's subnet
+# after the printer drops and rejoins Wi-Fi: connect() then fails EHOSTUNREACH
+# ("No route to host") even though a fresh process on the same box connects fine.
+# Retrying a few times forces the kernel to re-resolve the route and it comes good
+# — so the service recovers on its own when the printer comes back, without a
+# restart. ECONNREFUSED is included because a just-booted printer can refuse for a
+# moment before its :9100 listener is up. (Confirmed on munchlax 2026-08-08.)
+_TRANSIENT_ERRNOS = frozenset({
+    errno.EHOSTUNREACH,   # 65 on macOS: "No route to host" — the stale-route case
+    errno.ENETUNREACH,    # network unreachable
+    errno.ECONNREFUSED,   # printer up but :9100 not listening yet
+    errno.EHOSTDOWN,
+})
+_CONNECT_RETRIES = 4        # total attempts on a transient error
+_CONNECT_BACKOFF = 0.6      # seconds between attempts (grows a little each try)
+
+
 def _connect(host: str, timeout: float) -> socket.socket:
-    try:
-        s = socket.create_connection((host, PORT), timeout=timeout)
-    except socket.timeout as e:
-        raise ConnectionBusy(
-            f"timed out connecting to {host}:{PORT} — the printer may be asleep, or "
-            f"another app (e.g. Brother's software) is holding its single connection slot. "
-            f"Close other apps and retry."
-        ) from e
-    except OSError as e:
-        raise ConnectionBusy(f"could not connect to {host}:{PORT}: {e}") from e
-    s.settimeout(timeout)
-    return s
+    last: OSError | None = None
+    for attempt in range(_CONNECT_RETRIES):
+        try:
+            s = socket.create_connection((host, PORT), timeout=timeout)
+            s.settimeout(timeout)
+            return s
+        except socket.timeout as e:
+            # A timeout is "asleep / slot held", not a stale route — don't spin on it.
+            raise ConnectionBusy(
+                f"timed out connecting to {host}:{PORT} — the printer may be asleep, or "
+                f"another app (e.g. Brother's software) is holding its single connection slot. "
+                f"Close other apps and retry."
+            ) from e
+        except OSError as e:
+            last = e
+            # Only retry the transient, self-healing routing failures; anything else
+            # (bad address, permission, etc.) fails fast.
+            if e.errno not in _TRANSIENT_ERRNOS or attempt == _CONNECT_RETRIES - 1:
+                break
+            if _DEBUG:
+                print(f"[connect] {host}:{PORT} attempt {attempt + 1} "
+                      f"transient {e}; retrying", flush=True)
+            time.sleep(_CONNECT_BACKOFF * (attempt + 1))
+    raise ConnectionBusy(f"could not connect to {host}:{PORT}: {last}") from last
 
 
 def _recv(sock: socket.socket, settle: float = 0.4) -> str:
