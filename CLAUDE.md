@@ -417,3 +417,22 @@ Hard-won, to stop re-paying for them:
    **5001** and `run.bat` documents it. When a labeler endpoint 404s or shows a wrong version, check
    **which app answers the port** before suspecting labeler code (related to lesson #10 — wrong/stale
    server masquerading as a bug).
+
+13. **"waiting for the printer…" stuck AFTER a successful print = a late queue-poll clobbering the
+   final status** (v0.9.14). The Print button starts a `setInterval` that polls `/api/queue` every 3 s
+   and writes "waiting for the printer…" while busy. When the blocking `/api/print` returns, the interval
+   is cleared — but a poll callback already *awaiting* `/api/queue` at that moment still resolves
+   afterward and overwrites the "✓ printed" flash. Symptom: label prints fine, tape stats show, Device
+   tab says IDLE/SUCCESS, yet Print tab is frozen on "waiting for the printer…". Fix: a `done` flag set
+   in the `finally`, checked inside the poll before it flashes. **Any async status flash racing a
+   still-in-flight poller needs a generation/`done` guard — clearing the interval doesn't cancel the
+   call already awaiting.**
+
+14. **Off-by-one white seam down the far-right of full-bleed prints = printer physical margin, NOT our
+   render** (v0.9.14). A black-background / bordered label printed with a thin unprinted white line on
+   the far right that had to be trimmed. Our 312 px raster is byte-perfect (every column incl. 311 is
+   inked — verified), but the VC-500W's printable width is a hair wider, so 1 physical column stays
+   white. Fix: `compose._RIGHT_BLEED_PX` (=1) widens the raster and **edge-clamps the last real column**
+   (replicates it, not the background) so a border stroke or solid fill bleeds into the margin. Length
+   (tape used) is unchanged; preview==print holds because both go through `_compose`. **Don't chase this
+   in the render math — the JPEG is correct; it's a hardware margin, covered by bleed.**

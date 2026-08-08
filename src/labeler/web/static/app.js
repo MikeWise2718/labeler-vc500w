@@ -844,16 +844,24 @@ $("#btn-print").onclick = async () => {
   flash("#print-status", q.busy
     ? "waiting — someone else is printing…"
     : "printing… (hold tight, ~10–20 s)");
+  // `done` guards against a race: the 3 s poll below may already be awaiting
+  // /api/queue when the print finishes. Without this flag that in-flight callback
+  // resolves AFTER the "✓ printed" flash and overwrites it with "waiting for the
+  // printer…" — the label prints fine but the UI is stuck saying it's waiting
+  // (seen 2026-08-08). Once the print returns we set done=true so no late poll
+  // response can clobber the final status.
+  let done = false;
   const queuePoll = setInterval(async () => {
     try {
       const s = await api.json("/api/queue");
-      if (s.busy) flash("#print-status", "waiting for the printer…");
+      if (!done && s.busy) flash("#print-status", "waiting for the printer…");
     } catch { /* ignore */ }
   }, 3000);
   let r;
   try {
     r = await api.post("/api/print", body);
   } finally {
+    done = true;
     clearInterval(queuePoll);        // never leave a poller running
   }
   // Record the print in THIS BROWSER's history — the server keeps only statistics.

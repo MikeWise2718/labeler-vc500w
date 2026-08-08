@@ -50,6 +50,17 @@ _MIN_LENGTH_PX = 1
 # Margin (px) added below the lowest element when auto-sizing the length.
 _AUTO_MARGIN_PX = 8
 
+# Right-edge bleed (px). The VC-500W's physical printable width is a hair wider than
+# our 312 px raster for 25 mm tape, so a full-bleed design (black background, a
+# border) prints with a thin UNPRINTED white seam down the far-right column that has
+# to be trimmed off by hand (seen on the Scyther label, 2026-08-08). Extending the
+# canvas by this many columns on the RIGHT — filled with the background color — makes
+# the ink bleed into that physical margin so there's no seam. It does NOT change tape
+# length (that's the height axis) and, because the same _compose feeds both the
+# preview and the print JPEG, preview==print is preserved. Content coordinates are
+# unaffected: we only pad on the right, we don't shift anything.
+_RIGHT_BLEED_PX = 1
+
 
 # Cap on a single inlined bitmap, pre-decode. Data URIs travel in the display list
 # on every render/preview call, so a huge paste would be re-sent on every keystroke.
@@ -241,7 +252,26 @@ def _compose(dl: dict) -> tuple[Image.Image, str]:
             scale = width / canvas.width
             canvas = canvas.resize((width, max(1, round(canvas.height * scale))), Image.LANCZOS)
 
+    canvas = _add_right_bleed(canvas)
     return canvas, background
+
+
+def _add_right_bleed(canvas: Image.Image) -> Image.Image:
+    """Widen the canvas by _RIGHT_BLEED_PX, replicating the rightmost column.
+
+    Edge-clamp (not background-fill) so whatever is at the right edge — a solid
+    background, a border stroke, an image — bleeds into the printer's physical
+    right margin without a white seam. See _RIGHT_BLEED_PX for the why.
+    """
+    if _RIGHT_BLEED_PX <= 0:
+        return canvas
+    w, h = canvas.width, canvas.height
+    out = Image.new(canvas.mode, (w + _RIGHT_BLEED_PX, h))
+    out.paste(canvas, (0, 0))
+    edge = canvas.crop((w - 1, 0, w, h))          # the last real column
+    for dx in range(_RIGHT_BLEED_PX):
+        out.paste(edge, (w + dx, 0))
+    return out
 
 
 def measure_display_list(dl: dict) -> dict:

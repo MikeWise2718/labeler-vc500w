@@ -19,7 +19,9 @@ def _decode(data: bytes) -> Image.Image:
 def test_empty_display_list_renders_blank_canvas_at_media_width():
     out = compose.render_display_list({"media_mm": 25, "elements": []}, fmt="PNG")
     img = _decode(out)
-    assert img.width == media_for(25).width_px  # 312 px across 25 mm tape
+    # 312 px content across 25 mm tape, plus the right-edge bleed that covers the
+    # printer's physical right margin (else a white seam shows on full-bleed labels).
+    assert img.width == media_for(25).width_px + compose._RIGHT_BLEED_PX
     # auto length with no elements -> minimal height
     assert img.height >= 1
 
@@ -144,7 +146,33 @@ def test_image_element_without_source_does_not_crash():
         "elements": [{"type": "image", "x": 0, "y": 0, "w": 100, "h": 80, "z": 0}],
     }
     out = compose.render_display_list(dl, fmt="PNG")
-    assert _decode(out).width == media_for(25).width_px  # rendered fine
+    assert _decode(out).width == media_for(25).width_px + compose._RIGHT_BLEED_PX  # rendered fine
+
+
+def test_right_bleed_covers_far_right_column():
+    # Regression (2026-08-08): a full-bleed label (solid background) printed with a
+    # thin UNPRINTED white seam down the far-right column, because the printer's
+    # physical printable width is a hair wider than our 312 px raster. The fix widens
+    # the raster by _RIGHT_BLEED_PX, edge-clamping the last real column so the ink
+    # bleeds into that margin. Assert the extra column(s) match the design's right
+    # edge (here: black), not the JPEG's white flatten background.
+    dl = {"media_mm": 25, "length_px": 120, "background": "black", "elements": []}
+    img = _decode(compose.render_display_list(dl, fmt="PNG")).convert("RGB")
+    assert img.width == media_for(25).width_px + compose._RIGHT_BLEED_PX
+    for dx in range(1, compose._RIGHT_BLEED_PX + 1):
+        r, g, b = img.getpixel((img.width - dx, img.height // 2))
+        assert r < 40 and g < 40 and b < 40  # black bleed, no white seam
+
+
+def test_right_bleed_clamps_border_stroke_not_background():
+    # A bordered label's right edge is the STROKE, so the bleed must replicate the
+    # stroke color, not the background — else the seam is merely moved inside the frame.
+    dl = {"media_mm": 25, "length_px": 120, "background": "white", "elements": [
+        {"type": "border", "z": 99, "color": "black", "thickness": 4}]}
+    img = _decode(compose.render_display_list(dl, fmt="PNG")).convert("RGB")
+    for dx in range(1, compose._RIGHT_BLEED_PX + 1):
+        r, g, b = img.getpixel((img.width - dx, img.height // 2))
+        assert r < 40 and g < 40 and b < 40  # border stroke bled to the edge
 
 
 def test_unknown_element_type_raises():
@@ -158,7 +186,8 @@ def test_rotate_90_swaps_axes_and_refits_to_media_width():
     # printer's fixed across-tape width) but now SHORT in length.
     dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
     img = _decode(compose.render_display_list(dl, fmt="PNG"))
-    assert img.width == media_for(25).width_px      # 312, re-fit to media width
+    # 312 content re-fit to media width, + the right-edge bleed
+    assert img.width == media_for(25).width_px + compose._RIGHT_BLEED_PX
     assert img.height < 600                          # the long axis became short
 
 
@@ -166,7 +195,7 @@ def test_measure_reports_length_in_cm_and_inches():
     # 600 px length at 12.48 px/mm = 48.08 mm = ~4.8 cm = ~1.89 in
     dl = {"media_mm": 25, "length_px": 600, "elements": []}
     m = compose.measure_display_list(dl)
-    assert m["width_px"] == media_for(25).width_px
+    assert m["width_px"] == media_for(25).width_px + compose._RIGHT_BLEED_PX
     assert m["length_px"] == 600
     assert m["length_cm"] == pytest.approx(4.8, abs=0.2)
     assert m["length_in"] == pytest.approx(1.89, abs=0.05)

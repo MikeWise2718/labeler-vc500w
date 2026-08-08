@@ -11,6 +11,8 @@ import json
 import pytest
 from PIL import Image
 
+from labeler import compose
+from labeler.config import media_for
 from labeler.web import app as webapp
 from labeler.web import runtime
 from labeler.status import Status
@@ -105,14 +107,16 @@ def test_render_preview_matches_print_orientation(client):
     dl = {"media_mm": 25, "length_px": 600, "elements": [
         {"type": "text", "x": 0, "y": 0, "w": 312, "h": 100, "text": "X", "font_size": 60}]}
     preview = Image.open(io.BytesIO(client.post("/api/render", json=dl).data))
-    assert preview.width == 312 and preview.height == 600
+    # 312 content + the right-edge bleed; preview == print, so it carries the bleed too.
+    assert preview.width == media_for(25).width_px + compose._RIGHT_BLEED_PX
+    assert preview.height == 600
 
 
 def test_measure_endpoint(client):
     dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
     m = client.post("/api/measure", json=dl).get_json()
     assert m["ok"]
-    assert m["width_px"] == 312
+    assert m["width_px"] == media_for(25).width_px + compose._RIGHT_BLEED_PX
     assert m["length_px"] < 600  # rotated short
 
 
