@@ -91,3 +91,28 @@ def test_offline_printer_exit_code(monkeypatch, capsys):
     monkeypatch.setattr(pl, "call", lambda *a, **k: {"ok": False, "error": "timed out"})
     assert pl.main(["--status"]) == 3
     assert "OFFLINE" in capsys.readouterr().out
+
+
+def test_eof_at_prompt_means_needs_confirmation_not_a_crash(monkeypatch, tmp_path):
+    # Git Bash on Windows: stdin claims to be a TTY but input() hits EOF. Must exit 5
+    # (never print, never traceback).
+    posted = []
+
+    def fake_call(server, path, body=None, **k):
+        if path == "/api/device":
+            return {"ok": True}
+        if path == "/api/measure":
+            return {"ok": True, "length_cm": 1.0, "length_in": 0.39}
+        posted.append(path)
+        return {"ok": True}
+
+    def eof(*a):
+        raise EOFError
+
+    monkeypatch.setattr(pl, "call", fake_call)
+    monkeypatch.setattr(pl.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", eof)
+    img = tmp_path / "x.png"
+    img.write_bytes(_img("PNG"))
+    assert pl.main([str(img), "-mw", "25"]) == 5
+    assert "/api/print" not in posted

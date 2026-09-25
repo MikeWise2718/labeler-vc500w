@@ -163,8 +163,9 @@ def main(argv=None) -> int:
     online = bool(dev.get("ok"))
     if a.status:
         if online:
+            media_name = dev.get("media_name") or f"unknown (cassette type {dev.get('cassette_type')})"
             print(f"printer ONLINE — {dev.get('state')} / {dev.get('stage')}, "
-                  f"media {dev.get('media_name')}, {dev.get('remain_in')}\" "
+                  f"media {media_name}, {dev.get('remain_in')}\" "
                   f"({dev.get('remain_cm')} cm) tape left")
         else:
             print("printer OFFLINE — it powers itself off when idle; someone has to press "
@@ -210,7 +211,15 @@ def main(argv=None) -> int:
         if not sys.stdin.isatty():
             print(f"needs confirmation: label is {size}. Re-run with -y to print.", file=sys.stderr)
             return 5
-        if input(f"Print label, {size}? [y/N] ").strip().lower() not in ("y", "yes"):
+        try:
+            answer = input(f"Print label, {size}? [y/N] ")
+        except EOFError:
+            # stdin looked like a terminal but isn't (e.g. Git Bash on Windows with
+            # input redirected) — same as no TTY: never print unconfirmed.
+            print(f"\nneeds confirmation: label is {size}. Re-run with -y to print.",
+                  file=sys.stderr)
+            return 5
+        if answer.strip().lower() not in ("y", "yes"):
             print("cancelled")
             return 0
 
