@@ -41,6 +41,8 @@ it awake.)
   tape instead (full width, longer label).
 - Full color prints (ZINK). Thin lines under ~2 px and text under ~20 px get mushy.
 - Text-only? Skip the bitmap: `--text "Line one\nLine two" -fs 56 [-B]`.
+  Text wider than the tape is silently CLIPPED (56 px fits ~11 characters on 25 mm) —
+  break lines with `\n` or lower `-fs`, and check the dry-run preview.
 
 ## 4. Dry run — ALWAYS, and show the user
 
