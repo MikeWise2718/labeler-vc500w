@@ -30,6 +30,7 @@ from ..config import MEDIA, SUPPORTED_WIDTHS, media_for
 from ..errors import LabelerError
 from ..render import _load_font  # for font availability probing
 from . import runtime
+from .keepalive import KeepAlive
 from .runtime import WebSettings, log_event
 
 # One printer at a time. Held across the whole status/print op.
@@ -106,6 +107,11 @@ _print_queue = _PrintQueue(_printer_lock)
 
 def _settings() -> WebSettings:
     return WebSettings.load()
+
+
+# Keep-awake poller (web/keepalive.py). Shares the printer lock but never blocks on
+# it. Constructed here, STARTED only in main() — tests and WSGI imports stay threadless.
+_keepalive = KeepAlive(_printer_lock, _settings)
 
 
 def _slug(s: str) -> str:
@@ -415,6 +421,12 @@ def create_app() -> Flask:
         """
         return jsonify(ok=True, **_print_queue.snapshot())
 
+    @app.get("/api/keepalive")
+    def api_keepalive():
+        """Keep-awake poller state: is the printer online, when was it last seen,
+        and since when has it been dark. Read-only; configure via Settings."""
+        return jsonify(ok=True, **_keepalive.state.public())
+
     # ---- shared tape statistics -------------------------------------------------
     @app.get("/api/stats")
     def api_stats():
@@ -645,7 +657,9 @@ def main() -> None:
         f"[dim]v{__version__}[/] → [cyan]http://{args.bind}:{args.port}[/]"
         + (" [yellow](auto-reload)[/]" if args.reload else "")
     )
-    create_app().run(
+    flask_app = create_app()
+    _keepalive.start()   # printer keep-awake + online/offline log (web/keepalive.py)
+    flask_app.run(
         host=args.bind,
         port=args.port,
         debug=args.debug,

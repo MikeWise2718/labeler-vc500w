@@ -914,6 +914,13 @@ async function loadDevice() {
     ["Media", d.media_name || "?"], ["Online", d.online], ["Power", d.capacity != null ? d.capacity + "%" : "?"],
     ["Ready", d.ready ? "yes" : "no"], ["Total prints", d.total_prints], ["Last printed", d.last_printed || "—"],
   ];
+  // Keep-awake poller (server side): when the printer was last seen / went dark.
+  try {
+    const k = await api.json("/api/keepalive");
+    rows.push(["Keep-awake", !k.interval_min ? "off (Settings → Power control)"
+      : `every ${k.interval_min} min · last seen ${k.last_ok || "—"}`
+        + (k.offline_since ? ` · <b>offline since ${k.offline_since}</b>` : "")]);
+  } catch { /* older server */ }
   $("#device-table").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v ?? "—"}</td></tr>`).join("");
   $("#device-raw").textContent = d.raw || "(no status body)";
 }
@@ -930,6 +937,7 @@ async function loadSettings() {
   $("#set-units").value = r.settings.units;
   $("#set-shelly-host").value = r.settings.shelly_host || "";
   $("#set-shelly-outlet").value = String(r.settings.shelly_outlet ?? 0);
+  $("#set-keepalive").value = String(r.settings.keepalive_min ?? 5);
   design.media_mm = r.settings.media_width;
   design.background = r.settings.background;
   renderCustomColors();
@@ -965,6 +973,7 @@ $("#btn-save-settings").onclick = async () => {
     custom_colors: settingsCache.custom_colors || [],
     shelly_host: $("#set-shelly-host").value.trim(),
     shelly_outlet: +$("#set-shelly-outlet").value,
+    keepalive_min: Math.max(0, Math.round(+$("#set-keepalive").value || 0)),
   };
   const r = await api.post("/api/settings", body);
   if (r.ok) { settingsCache = r.settings; flash("#settings-status", "saved"); pollStatus(); }

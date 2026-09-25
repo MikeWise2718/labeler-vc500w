@@ -42,10 +42,8 @@ The printer is a **shared resource**: it sits in the basement next to `munchlax`
 VC-500W accepts **exactly one TCP connection on :9100 at a time**, and a client that dies mid-job
 wedges it until someone power-cycles it. Exactly one process may own the printer.
 
-```bash
-tools/deploy.sh                 # rsync + uv sync + restart + verify the shipped version
-tools/munchlax/install.sh       # run once ON munchlax to install the launchd agent
-```
+It runs on munchlax as a root LaunchDaemon on port **5001** — see `CLAUDE.md` → Deployment and
+`specs/munchlax-deployment.md` (the root requirement is macOS Local Network Privacy, not a whim).
 
 **Your label content stays on your machine.** The server never stores what you print:
 
@@ -64,6 +62,27 @@ Two more shared-printer conveniences: the Print button tells you when **someone 
 instead of hanging silently, and if the printer wedges, **Device → Power-cycle** restarts it through
 a Shelly smart outlet (configure it in Settings; blank = disabled) rather than requiring a trip to
 the basement.
+
+**Keep-awake.** The VC-500W switches itself off after a while idle and has no Wake-on-LAN, so the
+service reads its status every few minutes (Settings → Power control; 0 = off) in case that resets
+the idle timer. Either way the event log records `printer.offline` / `printer.online` with how long
+it had been idle, and the Device tab shows when it was last seen.
+
+### Printing from other projects / Claude sessions
+
+A stdlib-only client is served by the service itself, so any machine on the LAN can use it:
+
+```bash
+curl -s http://munchlax:5001/static/print_label.py -o print_label.py
+python print_label.py --status                     # printer on?
+python print_label.py logo.png -n -o preview.png   # dry run: length in cm + exact preview
+python print_label.py logo.png -y                  # print (queued with everyone else)
+python print_label.py --text "Spare fuses" -y      # text, no bitmap needed
+```
+
+Images are scaled to the tape width (25 mm = 312 px); `-r 90` runs a wide image along the tape.
+For Claude Code, `tools/install-claude-skill.sh` installs a **`print-label`** skill so every
+session on the machine knows how to do this (dry run → show the user → print).
 
 **Code vs. runtime split:** code lives in this repo; server-side state lives under `~/.labeler/`
 (Windows `%USERPROFILE%\.labeler\`) — `settings.json`, `logs/events.jsonl`, `stats.jsonl`. `.venv`

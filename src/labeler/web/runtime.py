@@ -70,6 +70,8 @@ class WebSettings:
     # Empty host = feature disabled (no outlet wired up yet). See labeler/power.py.
     shelly_host: str = ""              # e.g. "192.168.25.184"
     shelly_outlet: int = 0             # 0-3 on a Power Strip 4 Gen4
+    # Printer keep-awake: read status every N minutes (0 = off). See web/keepalive.py.
+    keepalive_min: int = 5
 
     @classmethod
     def load(cls) -> "WebSettings":
@@ -112,6 +114,8 @@ LOG_FIELD_ALLOWLIST = frozenset({
     "w", "h", "width", "height", "length_px", "count", "keys", "elements",
     # queue / job bookkeeping
     "job", "position", "waited_s", "duration_s",
+    # printer online/offline tracking (keepalive.py) — timings, not content
+    "idle_s", "last_ok",
 })
 
 # Fields historically logged that DO carry label content. Named explicitly so the

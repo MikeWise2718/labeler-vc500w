@@ -167,6 +167,10 @@
               <option value="2">2</option><option value="3">3</option>
             </select>
           </label>
+          <label>Keep printer awake — check every
+            <input type="number" id="set-keepalive" min="0" max="120" step="1" style="width:5em"> min
+            <span class="hint" style="display:block;margin:2px 0">The VC-500W switches itself off after a while idle (no Wake-on-LAN). A light status read every few minutes may keep it on, and the log records when it drops off. 0 = off.</span>
+          </label>
         </div>
       </details>
       <details><summary>Editor defaults</summary>
