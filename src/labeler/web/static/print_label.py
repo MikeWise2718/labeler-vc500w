@@ -163,7 +163,8 @@ def main(argv=None) -> int:
     online = bool(dev.get("ok"))
     if a.status:
         if online:
-            media_name = dev.get("media_name") or f"unknown (cassette type {dev.get('cassette_type')})"
+            media_name = (f"{dev['media_name']} ({dev.get('loaded_media_mm')} mm)" if dev.get("media_name")
+                          else f"unknown (cassette type {dev.get('cassette_type')})")
             print(f"printer ONLINE — {dev.get('state')} / {dev.get('stage')}, "
                   f"media {media_name}, {dev.get('remain_in')}\" "
                   f"({dev.get('remain_cm')} cm) tape left")
@@ -176,9 +177,14 @@ def main(argv=None) -> int:
     if not a.image and not a.text:
         ap.error("give an image path or --text (or --status)")
 
-    media = a.media_width
+    # Default to the tape actually LOADED (read from the cassette), then the
+    # service's setting. A label laid out for the wrong width prints wrong.
+    media = a.media_width or dev.get("loaded_media_mm")
     if media is None:
         media = call(a.server, "/api/settings", timeout=30).get("settings", {}).get("media_width", 25)
+    elif a.media_width and dev.get("loaded_media_mm") and a.media_width != dev["loaded_media_mm"]:
+        print(f"warning: -mw {a.media_width} but a {dev['loaded_media_mm']} mm cassette is loaded",
+              file=sys.stderr)
     try:
         if a.text:
             dl = text_display_list(a.text.replace("\\n", "\n"), media, font_size=a.font_size,

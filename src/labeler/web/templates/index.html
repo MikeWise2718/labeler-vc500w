@@ -40,9 +40,11 @@
         <div class="controls">
           <label>Tape width
             <select id="print-media">
+              <option value="12">12 mm</option>
               <option value="25">25 mm</option>
               <option value="50">50 mm</option>
             </select>
+            <span id="print-media-warn" class="hint" style="display:block;color:#e5a00d"></span>
           </label>
           <label>Mode
             <select id="print-mode">
@@ -81,6 +83,7 @@
           <div class="canvas-meta">
             <label>Tape
               <select id="edit-media">
+                <option value="12">12 mm</option>
                 <option value="25">25 mm</option>
                 <option value="50">50 mm</option>
               </select>
@@ -146,7 +149,7 @@
         <div class="form">
           <label>Host / IP <input id="set-host"></label>
           <label>Default media
-            <select id="set-media"><option value="25">25 mm</option><option value="50">50 mm</option></select>
+            <select id="set-media"><option value="12">12 mm</option><option value="25">25 mm</option><option value="50">50 mm</option></select>
           </label>
           <label>Mode <select id="set-mode"><option>vivid</option><option>normal</option></select></label>
           <label>Cut <select id="set-cut"><option>full</option><option>half</option><option>none</option></select></label>

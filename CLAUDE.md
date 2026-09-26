@@ -131,6 +131,11 @@ protocol breakdown and citations.
   in the status reply (one confirmed point in the cassette-type lookup). At 313 DPI (~12.48 px/mm), 25 mm
   ≈ **312 px** across the tape (minus small unprintable edge margins — confirm exact usable width on first print).
   Length axis is continuous (you choose it; ~17" max single pass).
+- **`cassette_type` identifies the loaded roll** — `1` = 25 mm CZ-1004 (2026-06-14), `2` = 50 mm
+  CZ-1005 (2026-09-26). **12 mm: not yet read** — load that cassette and check `/api/device`,
+  then add it to `config.MEDIA`. Mapped by `config.media_for_cassette()`; `/api/device` and
+  `/api/status` return `loaded_media_mm`, the Print tab warns on a width mismatch, and
+  `print_label.py` defaults to the loaded width. We own 12 / 25 / 50 mm cassettes.
 - **First successful direct print** 2026-06-14: full sequence worked — `lock` (got job_token) →
   `<print>` XML (`mode=vivid`, `lpi=317`, `cutmode=full`, `datasize`) → raw JPEG bytes → poll
   `status.xml` (`PROCESSING → PREPARING PRINT → PREHEAT → PRINTING`) → `lock cancel`. Read AND

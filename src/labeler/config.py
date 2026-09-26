@@ -37,17 +37,26 @@ class Media:
         return round(self.width_mm * PX_PER_MM)
 
 
-# Known media. cassette_type=1 confirmed for 25 mm (CZ-1004); others TBD.
+# Known media. cassette_type is what status.xml reports for the loaded cassette:
+# 1 = 25 mm (CZ-1004, 2026-06-14), 2 = 50 mm (CZ-1005, 2026-09-26). 12 mm: TBD —
+# read it from /api/device the next time that cassette is loaded.
 MEDIA: dict[int, Media] = {
     9:  Media("CZ-1003", 9),
     12: Media("CZ-1002", 12),
     19: Media("CZ-1001", 19),
     25: Media("CZ-1004", 25, cassette_type=1),
-    50: Media("CZ-1005", 50),
+    50: Media("CZ-1005", 50, cassette_type=2),
 }
 
 # Phase 1 supports these widths via the CLI; the rest are table entries for later.
-SUPPORTED_WIDTHS = (25, 50)
+SUPPORTED_WIDTHS = (12, 25, 50)   # the cassettes we own
+
+
+def media_for_cassette(cassette_type: int | None) -> Media | None:
+    """The Media whose status.xml cassette_type matches, or None if unmapped."""
+    if cassette_type is None:
+        return None
+    return next((m for m in MEDIA.values() if m.cassette_type == cassette_type), None)
 
 
 def media_for(width_mm: int) -> Media:

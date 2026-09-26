@@ -1,6 +1,6 @@
 ---
 name: print-label
-description: Print a label or sticker on the house's shared Brother VC-500W color label printer (ZINK, 25 mm tape) — from any project. Use when the user asks to print a label, sticker, tag, name label, QR/bitmap/image onto the label printer, or asks whether the label printer is on. Sends a PNG/JPEG/GIF or text through the labeler service at http://munchlax:5001 (never directly to the printer).
+description: Print a label or sticker on the house's shared Brother VC-500W color label printer (ZINK, 12/25/50 mm tape) — from any project. Use when the user asks to print a label, sticker, tag, name label, QR/bitmap/image onto the label printer, or asks whether the label printer is on. Sends a PNG/JPEG/GIF or text through the labeler service at http://munchlax:5001 (never directly to the printer).
 ---
 
 # Print a label on the shared VC-500W
@@ -34,8 +34,9 @@ it awake.)
 
 ## 3. Make the bitmap
 
-- The image is scaled to the **tape width** — 25 mm tape = **312 px across**
-  (12.48 px/mm; 50 mm = 624 px). Render at that width (or a multiple) for crisp
+- The image is scaled to the **tape width** — 12 mm = **150 px**, 25 mm = **312 px**,
+  50 mm = **624 px** across (12.48 px/mm). The client reads which cassette is loaded
+  (`--status` shows it) and uses that width automatically; `-mw` overrides. Render at that width (or a multiple) for crisp
   output; the label's **length** = the scaled height.
 - A **wide** image makes a short, tiny label. Pass `-r 90` to run it ALONG the
   tape instead (full width, longer label).

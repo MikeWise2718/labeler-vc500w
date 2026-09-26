@@ -448,3 +448,21 @@ def test_powercycle_does_not_log_label_content(client, monkeypatch):
     assert "powercycle" in log
     for forbidden in runtime.LOG_FIELD_DENIED_CONTENT:
         assert f'"{forbidden}"' not in log
+
+
+@pytest.mark.parametrize("cassette, mm, name", [(1, 25, "CZ-1004"), (2, 50, "CZ-1005"),
+                                                (99, None, None)])
+def test_device_and_status_report_loaded_tape_width(client, monkeypatch, cassette, mm, name):
+    # status.xml's cassette_type identifies the loaded roll: 1 = 25 mm (2026-06-14),
+    # 2 = 50 mm (2026-09-26). Unknown types report None, never a guess.
+    monkeypatch.setattr(webapp.protocol, "get_status",
+                        lambda host, **k: Status(print_state="IDLE", cassette_type=cassette))
+    d = client.get("/api/device").get_json()
+    assert d["loaded_media_mm"] == mm and d["media_name"] == name
+    assert client.get("/api/status").get_json()["loaded_media_mm"] == mm
+
+
+def test_twelve_mm_tape_is_supported():
+    from labeler.config import SUPPORTED_WIDTHS, media_for_cassette
+    assert 12 in SUPPORTED_WIDTHS and media_for(12).width_px == 150
+    assert media_for_cassette(None) is None

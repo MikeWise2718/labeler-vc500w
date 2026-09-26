@@ -152,6 +152,16 @@ $$(".tab").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.ta
 })();
 
 // ---- status pill ------------------------------------------------------------
+// Width of the cassette actually in the printer (from status.xml cassette_type), so
+// the Print tab can warn before a 25 mm design goes onto 50 mm tape. null = unknown.
+let loadedMediaMm = null;
+function updateMediaWarning() {
+  const el = $("#print-media-warn");
+  if (!el) return;
+  const chosen = +$("#print-media").value;
+  el.textContent = loadedMediaMm && chosen && chosen !== loadedMediaMm
+    ? `⚠ a ${loadedMediaMm} mm cassette is loaded` : "";
+}
 async function pollStatus() {
   const pill = $("#status-pill");
   try {
@@ -159,7 +169,10 @@ async function pollStatus() {
     if (s.ok) {
       pill.textContent = s.ready ? "ready" : (s.state || "?");
       pill.className = "pill " + (s.ready ? "ok" : "bad");
-      pill.title = `state=${s.state} stage=${s.stage} remain=${s.remain_in ?? "?"}"`;
+      pill.title = `state=${s.state} stage=${s.stage} remain=${s.remain_in ?? "?"}"`
+        + (s.loaded_media_mm ? ` · ${s.loaded_media_mm} mm tape loaded` : "");
+      loadedMediaMm = s.loaded_media_mm ?? null;
+      updateMediaWarning();
     } else { pill.textContent = "offline"; pill.className = "pill bad"; pill.title = s.error || ""; }
   } catch (e) { pill.textContent = "offline"; pill.className = "pill bad"; }
 }
@@ -168,7 +181,7 @@ async function pollStatus() {
 function addElement(type) {
   pushUndo();                    // discrete action -> one undo step
   endEditSession();
-  const w = design.media_mm === 50 ? 624 : 312;
+  const w = tapeWidthPx(design.media_mm);
   const z = design.elements.length;
   // Start new elements just below whatever's already there, so multiple adds
   // don't pile up at the same y (which made the canvas not match the list).
@@ -270,7 +283,7 @@ function pickImageFor(el) {
 // preserving aspect. Used by paste.
 function addImageFromDataURI(uri, natW, natH) {
   pushUndo(); endEditSession();
-  const w = design.media_mm === 50 ? 624 : 312;
+  const w = tapeWidthPx(design.media_mm);
   const z = design.elements.length;
   const el = {
     type: "image", x: 0, y: nextFreeY(), w, rotate: 0, z,
@@ -820,6 +833,7 @@ $("#modal-close").onclick = () => $("#modal").classList.add("hidden");
 // ============================ PRINT ========================================
 async function renderPrintPreview() {
   $("#print-media").value = design.media_mm;
+  updateMediaWarning();
   // Same exact print render as everywhere else — what you see is what feeds out.
   renderPrintRender("#print-preview", "#print-ruler", "#print-tape-used", design);
   // Orientation badge from the measured render.
@@ -829,6 +843,10 @@ async function renderPrintPreview() {
     $("#print-orient").innerHTML = `<span class="badge ${orient}">${orient}</span>`;
   }
 }
+
+// Changing tape width re-renders the preview at that width (and re-checks it against
+// the loaded cassette) instead of only taking effect when Print is clicked.
+$("#print-media").onchange = () => { design.media_mm = +$("#print-media").value; renderPrintPreview(); };
 
 $("#btn-print").onclick = async () => {
   design.media_mm = +$("#print-media").value;
@@ -911,7 +929,7 @@ async function loadDevice() {
     ["Host", d.host], ["Reachable", d.ok ? "yes" : "NO — " + (d.error || "")],
     ["State", d.state], ["Stage", d.stage], ["Error", d.error_field ?? d.error ?? "—"],
     ["Tape remaining", fmtRemain], ["Cassette type", d.cassette_type],
-    ["Media", d.media_name || "?"], ["Online", d.online], ["Power", d.capacity != null ? d.capacity + "%" : "?"],
+    ["Media", d.media_name ? `${d.media_name} — ${d.loaded_media_mm} mm` : `unknown (cassette type ${d.cassette_type})`], ["Online", d.online], ["Power", d.capacity != null ? d.capacity + "%" : "?"],
     ["Ready", d.ready ? "yes" : "no"], ["Total prints", d.total_prints], ["Last printed", d.last_printed || "—"],
   ];
   // Keep-awake poller (server side): when the printer was last seen / went dark.
@@ -1179,6 +1197,9 @@ function loadDesignIntoEditor(dl) {
 }
 
 // ---- utils ------------------------------------------------------------------
+// Across-tape pixels for a tape width — same formula as config.Media.width_px
+// (313 DPI ≈ 12.48 px/mm): 12 mm → 150, 25 mm → 312, 50 mm → 624.
+function tapeWidthPx(mm) { return Math.round((+mm || 25) * 12.48); }
 function flash(sel, msg) { const e = $(sel); if (e) e.textContent = msg; }
 function escapeAttr(s) { return String(s).replace(/"/g, "&quot;"); }
 function escapeHtml(s) {

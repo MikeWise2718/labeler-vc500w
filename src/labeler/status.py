@@ -41,7 +41,7 @@ class Status:
     print_job_stage: str | None = None     # READY FOR PRINT | PRINTING | PREHEAT | ...
     print_job_error: str | None = None     # NONE | ...
     remain: float | None = None            # tape remaining, in INCHES (confirmed 2026-06-15)
-    cassette_type: int | None = None       # 1 = 25 mm (CZ-1004), others TBD
+    cassette_type: int | None = None       # 1 = 25 mm (CZ-1004), 2 = 50 mm (CZ-1005); 12 mm TBD
     online: bool | None = None
     capacity: int | None = None            # power/battery %
     raw: str = ""

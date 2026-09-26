@@ -26,7 +26,7 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
 from .. import __version__, compose, power, protocol
-from ..config import MEDIA, SUPPORTED_WIDTHS, media_for
+from ..config import MEDIA, SUPPORTED_WIDTHS, media_for, media_for_cassette
 from ..errors import LabelerError
 from ..render import _load_font  # for font availability probing
 from . import runtime
@@ -149,7 +149,10 @@ def create_app() -> Flask:
                 st = protocol.get_status(host)
         except LabelerError as e:
             return jsonify(ok=False, error=str(e), host=host), 502
-        return jsonify(ok=True, host=host, **_status_dict(st))
+        loaded = media_for_cassette(st.cassette_type)
+        return jsonify(ok=True, host=host,
+                       loaded_media_mm=int(loaded.width_mm) if loaded else None,
+                       **_status_dict(st))
 
     @app.get("/api/device")
     def api_device():
@@ -161,11 +164,12 @@ def create_app() -> Flask:
         except LabelerError as e:
             return jsonify(ok=False, error=str(e), host=host,
                            total_prints=n_prints, last_printed=last), 502
-        cas = st.cassette_type
-        media_name = next((m.name for m in MEDIA.values() if m.cassette_type == cas), None)
+        loaded = media_for_cassette(st.cassette_type)
         return jsonify(
             ok=True, host=host, total_prints=n_prints, last_printed=last,
-            media_name=media_name, raw=st.raw, **_status_dict(st),
+            media_name=loaded.name if loaded else None,
+            loaded_media_mm=int(loaded.width_mm) if loaded else None,
+            raw=st.raw, **_status_dict(st),
         )
 
     @app.post("/api/reset")
