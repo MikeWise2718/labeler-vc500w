@@ -49,10 +49,11 @@ table shows the VC-500W fix as "in planning" ([Rapid7 repo][r7], [Brother adviso
 - Keep it LAN-only (already the rule — never forward 9100).
 
 ## What actually works
-1. **Keep-awake polling** (`web/keepalive.py`, v0.9.15). Sunburn independently reports that a
-   status query every 45 s prevents sleep. Here, 5-minute polls kept it up for about 27 h
-   (2026-09-25 08:20 → 2026-09-26 11:2x, no `printer.offline`). The drop that followed was a
-   manual power swap, not the timer.
+1. **Keep-awake polling** (`web/keepalive.py`, v0.9.15) — **confirmed: it works.** Sunburn
+   independently reports that a status query every 45 s prevents sleep. Here, 5-minute polls
+   kept it up through two long idle stretches with no `printer.offline`: about 27 h
+   (2026-09-25 → 09-26) and about 24 h (2026-10-02 11:49 → 10-03 11:31). The only drop
+   (09-26 11:38) was a manual power swap.
 2. **Mains-return power-on needs hardware:** a relay or opto across the power-button contacts,
    pulsed by the Shelly or an ESP after power returns. Or bench-test whether it starts if the
    button is held closed while power is applied. Not attempted.

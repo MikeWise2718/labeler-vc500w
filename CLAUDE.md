@@ -347,7 +347,10 @@ registry `D:\hw\docs\munchlax-ports.md` before adding any service.
   skips a round if a print holds it. Logs `printer.offline` (with `idle_s` = seconds since last
   print) / `printer.online` (`duration_s` dark). `GET /api/keepalive`; Device tab row. The VC-500W
   **auto-powers-off when idle and vanishes from ARP — no WoL**, and its web UI has no power settings
-  (checked 2026-09-25). If `idle_s` is the same across drops, polls don't reset the timer.
+  (checked 2026-09-25). **CONFIRMED WORKING:** the auto-off is an idle timer that a status read
+  resets. With 5-min polls the printer sat idle ~27 h (Sep 25→26) and ~24 h (Oct 2→3) with zero
+  `printer.offline`; before keep-awake it went dark after every quiet spell. The one drop since
+  (Sep 26 11:38) was a manual power swap. Don't disable it or stretch it far past 5 min.
 - **Client for sister projects:** `src/labeler/web/static/print_label.py` — stdlib only, served at
   `/static/print_label.py`. Goes through the service (queue!), never :9100. Geometry: image scaled
   to tape width; `-r 90` rotates the *element* (full-res), not the whole label (which upscales).
