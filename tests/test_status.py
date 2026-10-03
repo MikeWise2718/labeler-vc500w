@@ -37,7 +37,7 @@ def test_parse_real_reply():
     assert s.print_job_stage == "READY FOR PRINT"
     assert s.print_job_error == "NONE"
     assert s.remain == 54.87
-    assert s.cassette_type == 1
+    assert s.cassette_type == "1"
     assert s.online is True
     assert s.capacity == 100
 
@@ -90,3 +90,13 @@ def test_parse_ack_only_reply_has_no_state():
     # this as "keep polling", not as job-done.
     s = Status.parse("<status><code>0</code><comment>print data received</comment></status>")
     assert s.print_state is None
+
+
+def test_cassette_type_half_inch_is_kept_not_dropped():
+    # Regression 2026-10-03: the 12 mm cassette reports "1/2" (inches). Parsing it as an
+    # int returned None, so the 12 mm tape showed as "unknown".
+    from labeler.config import media_for_cassette
+    s = Status.parse("<status><print_state>IDLE</print_state><config><media_features>"
+                     "<cassette_type>1/2</cassette_type></media_features></config></status>")
+    assert s.cassette_type == "1/2"
+    assert media_for_cassette(s.cassette_type).width_mm == 12

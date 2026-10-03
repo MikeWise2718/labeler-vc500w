@@ -450,10 +450,12 @@ def test_powercycle_does_not_log_label_content(client, monkeypatch):
         assert f'"{forbidden}"' not in log
 
 
-@pytest.mark.parametrize("cassette, mm, name", [(1, 25, "CZ-1004"), (2, 50, "CZ-1005"),
-                                                (99, None, None)])
+@pytest.mark.parametrize("cassette, mm, name", [("1", 25, "CZ-1004"), ("2", 50, "CZ-1005"),
+                                                ("1/2", 12, "CZ-1002"), (1, 25, "CZ-1004"),
+                                                ("99", None, None), (None, None, None)])
 def test_device_and_status_report_loaded_tape_width(client, monkeypatch, cassette, mm, name):
-    # status.xml's cassette_type identifies the loaded roll: 1 = 25 mm (2026-06-14),
+    # status.xml's cassette_type is the tape width in inches: "1/2" = 12 mm (2026-10-03),
+    # "1" = 25 mm (2026-06-14),
     # 2 = 50 mm (2026-09-26). Unknown types report None, never a guess.
     monkeypatch.setattr(webapp.protocol, "get_status",
                         lambda host, **k: Status(print_state="IDLE", cassette_type=cassette))

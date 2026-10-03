@@ -41,7 +41,10 @@ class Status:
     print_job_stage: str | None = None     # READY FOR PRINT | PRINTING | PREHEAT | ...
     print_job_error: str | None = None     # NONE | ...
     remain: float | None = None            # tape remaining, in INCHES (confirmed 2026-06-15)
-    cassette_type: int | None = None       # 1 = 25 mm (CZ-1004), 2 = 50 mm (CZ-1005); 12 mm TBD
+    # Tape width in INCHES, as the printer's raw text: "1" = 25 mm, "2" = 50 mm,
+    # "1/2" = 12 mm. Kept as a string — "1/2" is not an int (parsing it as one
+    # silently gave None for the 12 mm cassette, 2026-10-03).
+    cassette_type: str | None = None
     online: bool | None = None
     capacity: int | None = None            # power/battery %
     raw: str = ""
@@ -79,7 +82,7 @@ class Status:
             print_job_stage=_find(text, "print_job_stage"),
             print_job_error=_find(text, "print_job_error"),
             remain=_find_float(text, "remain"),
-            cassette_type=_find_int(text, "cassette_type"),
+            cassette_type=_find(text, "cassette_type"),
             online=(bool(online) if online is not None else None),
             capacity=_find_int(text, "capacity"),
             raw=text,
