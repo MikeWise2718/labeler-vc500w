@@ -6,5 +6,6 @@
   "url": "http://munchlax:5001",
   "health_url": "http://munchlax:5001/api/ping",
   "probe_insecure": false,
-  "order": 60
+  "order": 60,
+  "category": "Apps"
 }
