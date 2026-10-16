@@ -116,7 +116,7 @@ def test_measure_endpoint(client):
     dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
     m = client.post("/api/measure", json=dl).get_json()
     assert m["ok"]
-    assert m["width_px"] == media_for(25).width_px + compose._RIGHT_BLEED_PX
+    assert m["width_px"] == media_for(25).width_px     # design width, bleed excluded
     assert m["length_px"] < 600  # rotated short
 
 

@@ -195,7 +195,9 @@ def test_measure_reports_length_in_cm_and_inches():
     # 600 px length at 12.48 px/mm = 48.08 mm = ~4.8 cm = ~1.89 in
     dl = {"media_mm": 25, "length_px": 600, "elements": []}
     m = compose.measure_display_list(dl)
-    assert m["width_px"] == media_for(25).width_px + compose._RIGHT_BLEED_PX
+    # measure reports the DESIGN width (no bleed): 25 mm tape is 312 px / 25.0 mm
+    assert m["width_px"] == media_for(25).width_px
+    assert m["width_mm"] == 25.0
     assert m["length_px"] == 600
     assert m["length_cm"] == pytest.approx(4.8, abs=0.2)
     assert m["length_in"] == pytest.approx(1.89, abs=0.05)
@@ -205,7 +207,8 @@ def test_measure_matches_rendered_dimensions_after_rotation():
     dl = {"media_mm": 25, "length_px": 600, "rotate": 90, "elements": []}
     m = compose.measure_display_list(dl)
     img = _decode(compose.render_display_list(dl, fmt="PNG"))
-    assert (m["width_px"], m["length_px"]) == (img.width, img.height)
+    # The render carries the right-edge bleed column; measure reports the design.
+    assert (m["width_px"] + compose._RIGHT_BLEED_PX, m["length_px"]) == (img.width, img.height)
 
 
 def test_jpeg_output_is_decodable_and_rgb():
@@ -274,3 +277,11 @@ def test_plain_path_still_works(tmp_path):
 def test_pil_image_still_works():
     im = Image.new("RGB", (6, 6), "green")
     assert compose._resolve_image(im).size == (6, 6)
+
+
+def test_measure_excludes_bleed_so_square_designs_measure_square():
+    # Regression: measure counted the 1 px bleed, so a 312x312 design measured
+    # 313 wide (25.1 mm) and its orientation badge read "landscape".
+    dl = {"media_mm": 25, "length_px": 312, "elements": []}
+    m = compose.measure_display_list(dl)
+    assert (m["width_px"], m["length_px"]) == (312, 312)

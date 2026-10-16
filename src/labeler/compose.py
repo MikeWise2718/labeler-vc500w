@@ -280,14 +280,20 @@ def measure_display_list(dl: dict) -> dict:
     Returns px dimensions plus mm/cm/inches. `length_*` is the tape-length axis — the
     amount of tape the print will consume; `width_*` is the across-tape dimension
     (the media width, unless a rotation reshaped it). 12.48 px/mm at 313 DPI.
+
+    The width is the DESIGN width: the _RIGHT_BLEED_PX print-edge padding is excluded
+    (it is a trick to cover the printer's physical margin, not part of the label).
+    Counting it reported 25 mm tape as 25.1 mm and skewed the orientation badge.
+    The rendered image itself is still bleed-wide.
     """
     from .config import PX_PER_MM
 
     canvas, _ = _compose(dl)
-    w_mm = canvas.width / PX_PER_MM
+    width = canvas.width - _RIGHT_BLEED_PX
+    w_mm = width / PX_PER_MM
     l_mm = canvas.height / PX_PER_MM
     return {
-        "width_px": canvas.width,
+        "width_px": width,
         "length_px": canvas.height,
         "width_mm": round(w_mm, 1),
         "length_mm": round(l_mm, 1),

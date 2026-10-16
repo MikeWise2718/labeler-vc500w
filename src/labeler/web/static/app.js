@@ -864,6 +864,14 @@ $("#btn-load-design").onclick = openDesignPicker;
 $("#modal-close").onclick = () => $("#modal").classList.add("hidden");
 
 // ============================ PRINT ========================================
+// Orientation badge. Within 5% of square counts as "square": a 2.4 cm label on 25 mm
+// tape is technically wider than long, but calling it landscape misleads.
+function labelOrientation(widthPx, lengthPx) {
+  if (!widthPx || !lengthPx) return "square";
+  const r = lengthPx / widthPx;
+  return r > 1.05 ? "portrait" : (r < 0.95 ? "landscape" : "square");
+}
+
 async function renderPrintPreview() {
   $("#print-media").value = design.media_mm;
   updateMediaWarning();
@@ -872,7 +880,7 @@ async function renderPrintPreview() {
   // Orientation badge from the measured render.
   const m = await api.post("/api/measure", design);
   if (m.ok) {
-    const orient = m.length_px > m.width_px ? "portrait" : (m.length_px < m.width_px ? "landscape" : "square");
+    const orient = labelOrientation(m.width_px, m.length_px);
     $("#print-orient").innerHTML = `<span class="badge ${orient}">${orient}</span>`;
   }
 }
