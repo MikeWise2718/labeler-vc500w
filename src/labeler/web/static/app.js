@@ -162,6 +162,39 @@ function updateMediaWarning() {
   el.textContent = loadedMediaMm && chosen && chosen !== loadedMediaMm
     ? `⚠ a ${loadedMediaMm} mm cassette is loaded` : "";
 }
+// ---- theme (Auto / Light / Dark), per browser --------------------------------
+// The inline script in index.html applies it before first paint; this wires the
+// header button and follows OS changes while on Auto.
+const THEME_KEY = "labeler_theme";
+const THEME_LABEL = { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark" };
+function themePref() {
+  try { return localStorage.getItem(THEME_KEY) || "auto"; } catch { return "auto"; }
+}
+function applyTheme(pref) {
+  const light = pref === "light" ||
+    (pref === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches);
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  const b = $("#theme-toggle");
+  if (b) {
+    b.textContent = THEME_LABEL[pref] || THEME_LABEL.auto;
+    b.title = pref === "auto" ? "Theme: Auto follows your system — click for Light"
+      : `Theme: ${pref} — click for ${pref === "light" ? "Dark" : "Auto"}`;
+  }
+}
+function cycleTheme() {
+  const order = ["auto", "light", "dark"];
+  const next = order[(order.indexOf(themePref()) + 1) % order.length];
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode: session only */ }
+  applyTheme(next);
+}
+if ($("#theme-toggle")) $("#theme-toggle").onclick = cycleTheme;
+if (window.matchMedia) {
+  const mq = matchMedia("(prefers-color-scheme: light)");
+  (mq.addEventListener ? mq.addEventListener.bind(mq, "change") : mq.addListener.bind(mq))(
+    () => { if (themePref() === "auto") applyTheme("auto"); });
+}
+applyTheme(themePref());
+
 async function pollStatus() {
   const pill = $("#status-pill");
   try {
@@ -1130,7 +1163,27 @@ function fontHas(name, style) {
 }
 
 // ============================ ABOUT / HISTORY ==============================
+// About → "On the landing page": collapsed by default, remembers its last state.
+const SHOTS_KEY = "labeler_about_shots_open";
+async function loadAboutShots() {
+  const det = $("#about-shots"), list = $("#about-shots-list");
+  if (!det || !list) return;
+  try { det.open = localStorage.getItem(SHOTS_KEY) === "1"; } catch { /* default closed */ }
+  det.ontoggle = () => { try { localStorage.setItem(SHOTS_KEY, det.open ? "1" : "0"); } catch {} };
+  if (list.dataset.loaded) return;
+  try {
+    const r = await api.json("/api/screenshots");
+    list.innerHTML = (r.screenshots || []).map(s =>
+      `<figure><a href="${escapeAttr(s.url)}" target="_blank" rel="noopener">` +
+      `<img src="${escapeAttr(s.url)}" alt="${escapeAttr(s.caption)}" loading="lazy"></a>` +
+      `<figcaption>${escapeHtml(s.caption)}</figcaption></figure>`).join("")
+      || '<span class="muted">No screenshots yet.</span>';
+    list.dataset.loaded = "1";
+  } catch { list.innerHTML = '<span class="muted">Could not load screenshots.</span>'; }
+}
+
 async function loadAbout() {
+  loadAboutShots();
   const a = await api.json("/api/about");
   const rows = [["Version", a.version], ["Python", a.python], ["Platform", a.platform],
     ["Hostname", a.hostname], ["Runtime dir", a.runtime_dir], ["Free memory", a.free_memory],
@@ -1209,7 +1262,12 @@ function escapeHtml(s) {
 function fmtTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d) ? iso : d.toLocaleString();
+  // Pinned to 24-hour + zone ("16 Oct 2026, 11:41 CEST"): toLocaleString() alone
+  // follows the browser locale and gives AM/PM in an en-US browser.
+  return isNaN(d) ? iso : d.toLocaleString("en-GB", {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+    hourCycle: "h23", timeZoneName: "short",
+  });
 }
 function toHex(c) {
   if (!c) return "#000000";

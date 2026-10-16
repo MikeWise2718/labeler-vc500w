@@ -359,6 +359,25 @@ registry `D:\hw\docs\munchlax-ports.md` before adding any service.
   `tools/install-claude-skill.sh` to `~/.claude/skills/print-label/` (per machine — re-run after
   editing). Keep the skill, the client's `--help`, and README in sync.
 
+## Themes + landing-page screenshots (v0.9.19)
+- **Light / dark theme:** header button cycles **Auto → Light → Dark** (Auto follows the OS and
+  tracks changes live). Stored **per browser** in `localStorage` (`labeler_theme`), deliberately
+  NOT in server settings: those are shared by everyone on the printer, a theme is personal. An
+  inline script in `index.html` applies it before first paint (no flash). All colours go through
+  CSS variables in `style.css` (`:root` = dark, `:root[data-theme="light"]` = light) — **add new
+  colours as variables in BOTH blocks**, never as a literal. Label previews stay white in both
+  themes (they show the print).
+- **Screenshots** (fleet standard, `D:\hw\pokeflute\docs\service-screenshots.md`):
+  `GET /api/screenshot` (the hero, an **animated PNG** of the editor cycling four demo labels;
+  frame 1 is the still) and `GET /api/screenshots` (gallery: hero, light mode, history; order and
+  captions in `app.py` `SCREENSHOTS`). No auth. About tab → "On the landing page" (collapsed by
+  default, remembered). **Regenerate** with `tools/screenshots/capture.py` against a LOCAL dev
+  copy with an isolated runtime dir (instructions in its docstring) — it fakes the printer
+  endpoints in the browser and uses invented artwork from `demo_designs.py`, so no real data and
+  no contact with the real printer. Then deploy and
+  `curl -s -X POST http://munchlax:8570/api/screenshots/labeler/pull`.
+- History times are pinned to `en-GB` 24-hour + zone (`fmtTime`), per the house time rule.
+
 ## Lessons learned (web app)
 Hard-won, to stop re-paying for them:
 

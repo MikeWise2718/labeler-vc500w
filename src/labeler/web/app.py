@@ -105,6 +105,15 @@ class _PrintQueue:
 _print_queue = _PrintQueue(_printer_lock)
 
 
+# Landing-page gallery, in order; the first is also GET /api/screenshot. The hero is an
+# animated PNG (its first frame is the still reduced-motion viewers see).
+SCREENSHOTS = [
+    ("screenshot.png", "Designing labels"),
+    ("screenshots/editor-light.png", "Light mode"),
+    ("screenshots/history.png", "Print history"),
+]
+
+
 def _settings() -> WebSettings:
     return WebSettings.load()
 
@@ -139,6 +148,23 @@ def create_app() -> Flask:
             timestamp=runtime.now_iso(),
             version=__version__,
         )
+
+    # ---- landing-page screenshots ----------------------------------------------
+    # Fleet standard (pokeflute docs/service-screenshots.md): no auth, no redirect.
+    # Regenerate with tools/screenshots/capture.py against a LOCAL dev copy (demo data).
+    @app.get("/api/screenshot")
+    def api_screenshot():
+        path = Path(app.static_folder) / "screenshot.png"
+        if not path.exists():
+            return jsonify(error="no screenshot"), 404
+        return send_file(path, mimetype="image/png", conditional=True)
+
+    @app.get("/api/screenshots")
+    def api_screenshots():
+        from flask import url_for
+        return jsonify(screenshots=[
+            {"url": url_for("static", filename=f), "caption": c}
+            for f, c in SCREENSHOTS if (Path(app.static_folder) / f).exists()])
 
     # ---- printer status / device ----------------------------------------------
     @app.get("/api/status")

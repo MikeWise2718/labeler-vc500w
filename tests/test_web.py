@@ -468,3 +468,19 @@ def test_twelve_mm_tape_is_supported():
     from labeler.config import SUPPORTED_WIDTHS, media_for_cassette
     assert 12 in SUPPORTED_WIDTHS and media_for(12).width_px == 150
     assert media_for_cassette(None) is None
+
+
+def test_screenshot_route_serves_png_without_auth(client):
+    # Fleet landing-page standard: 200 image/png, no auth, NO redirect (landing doesn't
+    # follow redirects, so a login bounce would read as "no screenshot").
+    r = client.get("/api/screenshot")
+    assert r.status_code == 200 and r.mimetype == "image/png"
+    assert r.data[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_screenshots_gallery_lists_existing_files_first_is_hero(client):
+    shots = client.get("/api/screenshots").get_json()["screenshots"]
+    assert shots and shots[0]["url"].endswith("/screenshot.png")
+    assert all(s["caption"] for s in shots)
+    for s in shots:                       # every listed file is actually served
+        assert client.get(s["url"]).status_code == 200

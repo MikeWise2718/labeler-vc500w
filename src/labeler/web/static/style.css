@@ -1,7 +1,24 @@
+/* Themes. Dark is the default; light is chosen by data-theme="light" on <html>, which a
+   tiny inline script in index.html sets before first paint from the viewer's choice
+   (Auto follows the OS). Every colour below goes through a variable so both themes stay
+   complete. Label previews keep a white ground in both — they show the actual print. */
 :root {
+  color-scheme: dark;
   --bg: #1c1f24; --panel: #262a31; --ink: #e6e8eb; --muted: #9aa1ac;
   --accent: #4f8cff; --good: #3ecf8e; --warn: #f0b429; --bad: #f0506e;
   --line: #3a3f47;
+  --btn: #343a44; --field: #1b1e23; --pill: #333; --code: #14161a;
+  --danger: #e74c3c; --danger-bg: #c0392b; --tape: #fafafa;
+  --accent-soft: rgba(79,140,255,.08); --backdrop: rgba(0,0,0,.6);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f5f7; --panel: #ffffff; --ink: #1f2328; --muted: #5d6673;
+  --accent: #2f6fde; --good: #178a57; --warn: #a86b00; --bad: #c8314f;
+  --line: #d4d8de;
+  --btn: #eceff3; --field: #ffffff; --pill: #eceff3; --code: #eef0f3;
+  --danger: #c0392b; --danger-bg: #c0392b; --tape: #e9ecef;
+  --accent-soft: rgba(47,111,222,.08); --backdrop: rgba(20,24,30,.45);
 }
 * { box-sizing: border-box; }
 body {
@@ -16,7 +33,7 @@ header h1 { font-size: 1.25rem; margin: 0; display: flex; align-items: center; g
 header h1 small { font-size: 0.5em; color: var(--muted); }
 .logo { font-size: 1.2em; }
 .pill {
-  padding: 3px 10px; border-radius: 999px; font-size: .8rem; background: #333;
+  padding: 3px 10px; border-radius: 999px; font-size: .8rem; background: var(--pill);
   border: 1px solid var(--line);
 }
 .pill.ok { background: rgba(62,207,142,.15); color: var(--good); border-color: var(--good); }
@@ -36,18 +53,18 @@ main { padding: 16px; max-width: 1100px; margin: 0 auto; }
 h2 { margin-top: 0; }
 
 button {
-  background: #343a44; color: var(--ink); border: 1px solid var(--line);
+  background: var(--btn); color: var(--ink); border: 1px solid var(--line);
   border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: .9rem;
 }
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.primary:hover { filter: brightness(1.1); }
 /* Destructive actions (power-cycle) — must not look like an ordinary button. */
-button.danger { border-color: #c0392b; color: #e74c3c; }
-button.danger:hover { background: #c0392b; color: #fff; border-color: #c0392b; }
+button.danger { border-color: var(--danger-bg); color: var(--danger); }
+button.danger:hover { background: var(--danger-bg); color: #fff; border-color: var(--danger-bg); }
 /* History badge for a print that failed. */
 .badge.fail { background: #c0392b; color: #fff; }
-select, input { background: #1b1e23; color: var(--ink); border: 1px solid var(--line);
+select, input, textarea { background: var(--field); color: var(--ink); border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 8px; font-size: .9rem; }
 label { display: block; margin: 8px 0; color: var(--muted); }
 label select, label input { margin-top: 3px; }
@@ -56,7 +73,7 @@ label select, label input { margin-top: 3px; }
 
 /* The "tape": a light strip the rendered label sits on */
 .tape {
-  position: relative; display: inline-block; background: #fafafa;
+  position: relative; display: inline-block; background: var(--tape);
   border: 1px solid var(--line); border-radius: 4px; padding: 6px;
   min-width: 120px; min-height: 60px;
 }
@@ -117,9 +134,9 @@ label select, label input { margin-top: 3px; }
   position: absolute; pointer-events: auto; cursor: pointer;
   border: 1px solid transparent; border-radius: 2px;
 }
-.hit-box:hover { border-color: var(--accent); background: rgba(79,140,255,.06); }
+.hit-box:hover { border-color: var(--accent); background: var(--accent-soft); }
 .sel-box {
-  position: absolute; border: 1.5px dashed var(--accent); background: rgba(79,140,255,.08);
+  position: absolute; border: 1.5px dashed var(--accent); background: var(--accent-soft);
   pointer-events: auto; cursor: move;
 }
 .sel-box .handle {
@@ -129,7 +146,7 @@ label select, label input { margin-top: 3px; }
 .props .form, .props label { font-size: .88rem; }
 .props textarea.text-input {
   width: 100%; resize: vertical; min-height: 2.4em; font: inherit;
-  background: #1b1e23; color: var(--ink); border: 1px solid var(--line);
+  background: var(--field); color: var(--ink); border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 8px; margin-top: 3px;
 }
 
@@ -158,7 +175,7 @@ label .swatches { margin-bottom: 2px; }
 table.kv { border-collapse: collapse; margin: 12px 0; }
 table.kv td { padding: 5px 14px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.kv td:first-child { color: var(--muted); white-space: nowrap; }
-pre.raw { background: #14161a; padding: 10px; border-radius: 6px; overflow: auto; max-height: 320px; font-size: .8rem; }
+pre.raw { background: var(--code); padding: 10px; border-radius: 6px; overflow: auto; max-height: 320px; font-size: .8rem; }
 .history { list-style: none; padding: 0; }
 .history li { display: flex; align-items: center; gap: 12px; padding: 8px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; }
@@ -182,7 +199,7 @@ details summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }
 details .form, details > div { padding: 0 12px 12px; }
 
 /* modal */
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
+.modal { position: fixed; inset: 0; background: var(--backdrop); display: flex; align-items: center; justify-content: center; }
 .modal.hidden { display: none; }
 .modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; min-width: 300px; max-width: 90vw; max-height: 80vh; overflow: auto; }
 .design-list { list-style: none; padding: 0; }
@@ -197,3 +214,15 @@ details .form, details > div { padding: 0 12px 12px; }
   nav#tabs { overflow-x: auto; }
   main { padding: 10px; }
 }
+
+/* Theme switch in the header (Auto / Light / Dark). */
+.header-right { display: flex; align-items: center; gap: 8px; }
+#theme-toggle { padding: 4px 10px; font-size: .85rem; border-radius: 999px; }
+
+/* About → "On the landing page" screenshots. */
+details.shots { margin-top: 18px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--panel); }
+details.shots summary { cursor: pointer; font-weight: 600; }
+.shots-list { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.shots-list figure { margin: 0; }
+.shots-list img { width: 300px; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+.shots-list figcaption { color: var(--muted); font-size: .85rem; margin-top: 4px; }

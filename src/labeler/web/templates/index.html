@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Labeler — VC-500W</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // Apply the theme before first paint (no dark->light flash). Per-browser choice:
+    // the server's settings are shared by everyone on the printer, a theme is personal.
+    (function () {
+      var pref = "auto";
+      try { pref = localStorage.getItem("labeler_theme") || "auto"; } catch (e) {}
+      var light = pref === "light" ||
+        (pref === "auto" && window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches);
+      document.documentElement.dataset.theme = light ? "light" : "dark";
+    })();
+  </script>
 </head>
 <body>
   <header>
@@ -12,7 +23,10 @@
       <span class="logo">🏷️</span>
       <span>Labeler <small id="version">v…</small></span>
     </h1>
-    <div id="status-pill" class="pill" title="printer status">status…</div>
+    <div class="header-right">
+      <button id="theme-toggle" type="button" title="Theme: Auto follows your system">◐ Auto</button>
+      <div id="status-pill" class="pill" title="printer status">status…</div>
+    </div>
   </header>
 
   <nav id="tabs">
@@ -44,7 +58,7 @@
               <option value="25">25 mm</option>
               <option value="50">50 mm</option>
             </select>
-            <span id="print-media-warn" class="hint" style="display:block;color:#e5a00d"></span>
+            <span id="print-media-warn" class="hint" style="display:block;color:var(--warn)"></span>
           </label>
           <label>Mode
             <select id="print-mode">
@@ -225,6 +239,12 @@
     <section id="tab-about" class="panel">
       <h2>About</h2>
       <table class="kv" id="about-table"></table>
+      <details id="about-shots" class="shots">
+        <summary>On the landing page</summary>
+        <p class="hint">What the house landing page shows for this app (demo labels, made by
+          <code>tools/screenshots/capture.py</code>). Click a picture for full size.</p>
+        <div id="about-shots-list" class="shots-list"></div>
+      </details>
     </section>
   </main>
 
