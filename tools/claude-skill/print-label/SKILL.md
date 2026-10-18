@@ -1,6 +1,8 @@
 ---
 name: print-label
 description: Print a label or sticker on the house's shared Brother VC-500W color label printer (ZINK, 12/25/50 mm tape) — from any project. Use when the user asks to print a label, sticker, tag, name label, QR/bitmap/image onto the label printer, or asks whether the label printer is on. Sends a PNG/JPEG/GIF or text through the labeler service at http://munchlax:5001 (never directly to the printer).
+metadata:
+  version: "2"
 ---
 
 # Print a label on the shared VC-500W
