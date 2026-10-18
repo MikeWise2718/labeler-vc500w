@@ -81,8 +81,8 @@ python print_label.py --text "Spare fuses" -y      # text, no bitmap needed
 ```
 
 Images are scaled to the tape width (25 mm = 312 px); `-r 90` runs a wide image along the tape.
-For Claude Code, `tools/install-claude-skill.sh` installs a **`print-label`** skill so every
-session on the machine knows how to do this (dry run → show the user → print).
+For Claude Code, a **`print-label`** skill (`tools/claude-skill/print-label/`, published to every
+machine through CCFleet) tells every session how to do this (dry run → show the user → print).
 
 **Code vs. runtime split:** code lives in this repo; server-side state lives under `~/.labeler/`
 (Windows `%USERPROFILE%\.labeler\`) — `settings.json`, `logs/events.jsonl`, `stats.jsonl`. `.venv`

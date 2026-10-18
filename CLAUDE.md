@@ -355,9 +355,9 @@ registry `D:\hw\docs\munchlax-ports.md` before adding any service.
   `/static/print_label.py`. Goes through the service (queue!), never :9100. Geometry: image scaled
   to tape width; `-r 90` rotates the *element* (full-res), not the whole label (which upscales).
   Won't print without `-y` when not on a TTY. Tests: `tests/test_print_label_client.py`.
-- **Skill:** source `tools/claude-skill/print-label/SKILL.md`, installed by
-  `tools/install-claude-skill.sh` to `~/.claude/skills/print-label/` (per machine — re-run after
-  editing). Keep the skill, the client's `--help`, and README in sync.
+- **Skill:** source `tools/claude-skill/print-label/SKILL.md`, published to every machine with `ccfleet publish` (skill `ccfleet-skill`); never copy it by hand
+  (that replaced `tools/install-claude-skill.sh`, 2026-10-18). Keep the skill, the client's
+  `--help`, and README in sync.
 
 ## Themes + landing-page screenshots (v0.9.19)
 - **Light / dark theme:** header button cycles **Auto → Light → Dark** (Auto follows the OS and
